@@ -1,0 +1,5 @@
+CompileFlags:
+  Add:
+    - -I/home/evok/workspace/embedded/tft_spi/inc
+    - -I/home/evok/workspace/embedded/tft_spi/libopencm3/include
+    - -DSTM32F1
