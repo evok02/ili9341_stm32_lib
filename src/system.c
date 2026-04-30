@@ -1,4 +1,5 @@
 #include "system.h"
+#include "libopencm3/stm32/f1/gpio.h"
 
 #define STD_STK_RELOAD_VAL (24e6 * 1e-3)
 
@@ -19,14 +20,18 @@ void system_gpio_setup(void) {
     gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ,
                   GPIO_CNF_OUTPUT_PUSHPULL, GPIO13);
 
+    // GPIO2 - DC, GPIO3 - RST
     gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ,
-                  GPIO_CNF_OUTPUT_PUSHPULL, GPIO1);
+                  GPIO_CNF_OUTPUT_PUSHPULL, GPIO2 | GPIO3);
 
-    // MOSI1, SCK1, NSS1
+    // MOSI1, SCK1
     gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_10_MHZ,
-                  GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO7 | GPIO5 );
-    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_10_MHZ, 
+                  GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO7 | GPIO5);
+    
+    // NSS1
+    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_10_MHZ,
                   GPIO_CNF_OUTPUT_PUSHPULL, GPIO4);
+
     // MISO1
     gpio_set_mode(GPIOA, GPIO_MODE_INPUT,
                   GPIO_CNF_INPUT_FLOAT, GPIO6);

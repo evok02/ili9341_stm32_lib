@@ -24,4 +24,16 @@ src/spi.o: src/spi.c inc/spi.h libopencm3/include/libopencm3/stm32/gpio.h \
  libopencm3/include/libopencm3/cm3/nvic.h \
  libopencm3/include/libopencm3/dispatch/nvic.h \
  libopencm3/include/libopencm3/stm32/f1/nvic.h \
- libopencm3/include/libopencm3/cm3/systick.h
+ libopencm3/include/libopencm3/cm3/systick.h \
+ /usr/arm-none-eabi/include/stdlib.h \
+ /usr/arm-none-eabi/include/machine/ieeefp.h \
+ /usr/arm-none-eabi/include/_ansi.h /usr/arm-none-eabi/include/newlib.h \
+ /usr/arm-none-eabi/include/sys/config.h \
+ /usr/lib/gcc/arm-none-eabi/14.2.0/include/stddef.h \
+ /usr/arm-none-eabi/include/sys/reent.h \
+ /usr/arm-none-eabi/include/_ansi.h \
+ /usr/arm-none-eabi/include/sys/cdefs.h \
+ /usr/arm-none-eabi/include/sys/_types.h \
+ /usr/arm-none-eabi/include/machine/_types.h \
+ /usr/arm-none-eabi/include/sys/lock.h \
+ /usr/arm-none-eabi/include/machine/stdlib.h

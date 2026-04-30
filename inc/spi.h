@@ -11,9 +11,12 @@
 #define HIGH    (true)
 #define LOW     (false)
 
+#define SET_NSS(high) (high ? gpio_set(GPIOA, GPIO4) : gpio_clear(GPIOA, GPIO4))
+
+
 void spi_setup(void);
-void spi_write_data(uint16_t* data, uint32_t length);
-void spi_read_data(uint16_t* data, uint32_t length);
-void spi_write_16_blocking(uint16_t data);
+void spi_write_data(uint8_t* data, uint32_t length);
+void spi_read_data(uint8_t* data, uint32_t length);
+void spi_send_byte_blocking(uint8_t data);
 
 #endif
