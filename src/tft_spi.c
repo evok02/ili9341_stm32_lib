@@ -5,7 +5,7 @@
 #include "spi.h"
 #include "tft.h"
 
-#define SQUARE_SIDE_LENGTH (50)
+#define SQUARE_SIDE_LENGTH (10)
 #define SQUARE_AREA (SQUARE_SIDE_LENGTH * SQUARE_SIDE_LENGTH)
 
 int main(void) {
@@ -24,9 +24,7 @@ int main(void) {
         counter++;
     }
 
-    tft_set_addr_window(0, SQUARE_SIDE_LENGTH,
-                        0, SQUARE_SIDE_LENGTH);
-    tft_push_color(red_fill, SQUARE_AREA);
+    tft_fill_rectangle(0, 0, SQUARE_SIDE_LENGTH, SQUARE_SIDE_LENGTH, red_fill);
 
     for (;;) {
         system_delay(1e3);

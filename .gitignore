@@ -1,5 +1,8 @@
+*.txt
 *.bin
 *.elf
 *.map
 *.hex
+src/*.o
+src/*.d
 generated.*
