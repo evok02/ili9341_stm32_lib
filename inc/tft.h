@@ -6,8 +6,8 @@
 #include "spi.h"
 #include "system.h"
 
-#define TFT_HEIGHT  (320)
-#define TFT_WIDTH   (240)
+#define TFT_HEIGHT  (320) // 320 / 8 = 40 (rows)
+#define TFT_WIDTH   (240) // 240 / 5 = 48 (chars/row)
 
 // --- TFT LCD COMMANDS DEFINITIOS
 #define TFT_CMD_SOFTWARE_RESET          (0x01U)
@@ -40,6 +40,8 @@ static command_t temp_command = { .command = 0, .arguments = 0, .argument_count 
 
 void tft_setup(void);
 void tft_fill_pixel(uint16_t x, uint16_t y, uint16_t color);
-void tft_fill_rectangle(uint16_t x0, uint16_t y0, uint16_t w, uint16_t l, uint16_t* color);
+void tft_fill_rectangle(uint16_t x0, uint16_t y0, uint16_t w, uint16_t l, uint16_t color);
+void tft_fill_screen(uint16_t color);
+void tft_draw_picture(uint16_t x0, uint16_t y0, uint16_t w, uint16_t h, uint16_t* data);
 
 #endif

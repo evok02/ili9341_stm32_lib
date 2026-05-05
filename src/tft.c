@@ -1,9 +1,12 @@
 #include "tft.h"
 
 static void hardware_reset(void) {
-    gpio_clear(GPIOA, GPIO3); // Set RSX pin low
-    system_delay(10);
     gpio_set(GPIOA, GPIO3); // Set RSX pin high 
+    system_delay(5);
+    gpio_clear(GPIOA, GPIO3); // Set RSX pin low
+    system_delay(20);
+    gpio_set(GPIOA, GPIO3); // Set RSX pin high 
+    system_delay(150);
 }
 
 static void set_dcx_pin(bool high) {
@@ -36,7 +39,6 @@ static void tft_send_data(uint8_t* buffer, uint32_t length) {
 
     set_dcx_pin(HIGH);
     spi_write_data(buffer, length);
-    set_dcx_pin(LOW);
 
     SET_NSS(HIGH);
 }
@@ -61,7 +63,7 @@ void tft_setup(void) {
     hardware_reset();
     system_delay(10);
 
-    /* Command sequence taken from 
+    /* Command sequence is taken from 
      * https://vivonomicon.com/2018/06/17/drawing-to-a-small-tft-display-the-ili9341-and-stm32/ */
     
     tft_send_command(command_create(TFT_CMD_SOFTWARE_RESET, 0, 0));
@@ -169,6 +171,7 @@ void tft_setup(void) {
         tft_send_command(command_create(0xE1, buffer, sizeof(buffer)));
     }
 
+
     tft_send_command(command_create(TFT_CMD_SLEEP_OUT, 0, 0));
     system_delay(500);
 
@@ -176,6 +179,9 @@ void tft_setup(void) {
     system_delay(500);
 
     tft_send_command(command_create(0x13, 0, 0));
+    system_delay(10);
+
+    tft_send_command(command_create(0, 0, 0));
 
     SET_NSS(HIGH);
 }
@@ -186,7 +192,7 @@ static void tft_set_addr_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t 
 
     if (x0 >= TFT_WIDTH || y0 >= TFT_HEIGHT) return; 
 
-    // Adjust accotding to the resolution
+    // Adjust according to the resolution
     x1 = (x1 > (TFT_WIDTH - 1)) ? TFT_WIDTH - 1 : x1;
     y1 = (y1 > (TFT_HEIGHT - 1)) ? TFT_HEIGHT - 1 : y1;
 
@@ -204,25 +210,25 @@ static void tft_set_addr_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t 
 
 }
 
-static void tft_push_color(uint16_t *color, uint32_t cnt) {
-    const size_t buffer_size = cnt * 2;
-    uint8_t buffer[buffer_size];
-
-    for (size_t index = 0, buffer_index = 0; index < cnt; index++, buffer_index += 2) {
-        buffer[buffer_index] = WORD_HIGH(color[index]);
-        buffer[buffer_index + 1] = WORD_BOTTOM(color[index]);
+static void tft_push_color(uint16_t color, uint32_t cnt) {
+    tft_send_command(command_create(TFT_CMD_MEMORY_WRITE, 0, 0));
+    while(cnt--) {
+        uint8_t buffer[] = { WORD_HIGH(color), WORD_BOTTOM(color) }; 
+        tft_send_data(buffer, 2);
     }
-
-    tft_send_command(command_create(TFT_CMD_MEMORY_WRITE, buffer, buffer_size));
 }
 
-void tft_fill_rectangle(uint16_t x0, uint16_t y0, uint16_t w, uint16_t h, uint16_t* color) {
+void tft_fill_rectangle(uint16_t x0, uint16_t y0, uint16_t w, uint16_t h, uint16_t color) {
     SET_NSS(LOW);
 
     tft_set_addr_window(x0, y0, x0 + w, y0 + h);
     tft_push_color(color, w * h);
 
     SET_NSS(HIGH);
+}
+
+void tft_fill_screen(uint16_t color) {
+    tft_fill_rectangle(0, 0, TFT_WIDTH, TFT_HEIGHT, color);
 }
 
 void tft_fill_pixel(uint16_t x, uint16_t y, uint16_t color) {
