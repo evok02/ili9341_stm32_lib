@@ -25,7 +25,7 @@ OBJS           += $(SRC_DIR)/$(BINARY).o
 OBJS           += $(SRC_DIR)/system.o
 OBJS           += $(SRC_DIR)/spi.o
 OBJS           += $(SRC_DIR)/tft.o
-OBJS           += $(SRC_DIR)/font.o
+OBJS           += $(SRC_DIR)/mmc.o
 
 include $(OPENCM3_DIR)/mk/genlink-config.mk
 include $(OPENCM3_DIR)/mk/gcc-config.mk

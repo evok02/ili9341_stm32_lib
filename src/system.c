@@ -25,12 +25,12 @@ void system_gpio_setup(void) {
                   GPIO_CNF_OUTPUT_PUSHPULL, GPIO2 | GPIO3);
 
     // MOSI1, SCK1
-    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_10_MHZ,
+    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ,
                   GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO7 | GPIO5);
     
-    // NSS1
+    // GPIO4 - CS, GPOIO1 - SD-CS 
     gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_10_MHZ,
-                  GPIO_CNF_OUTPUT_PUSHPULL, GPIO4);
+                  GPIO_CNF_OUTPUT_PUSHPULL, GPIO4 | GPIO1);
 
     // MISO1
     gpio_set_mode(GPIOA, GPIO_MODE_INPUT,

@@ -10,7 +10,7 @@ void spi_setup(void) {
     spi_enable(SPI1);
 }
 
-void spi_write_data(uint8_t* buffer, uint32_t length) {
+void spi_write_data(const uint8_t* buffer, uint32_t length) {
     const uint8_t* end = buffer + length;
     while (buffer < end) spi_send_byte_blocking(*buffer++);
 }
@@ -25,7 +25,17 @@ void spi_send_byte_blocking(uint8_t byte) {
     spi_send(SPI1, (uint16_t)byte);
 }
 
+uint8_t spi_read_byte(void) {
+    return spi_read(SPI1);
+}
+
 void spi_wait(void) {
    while (SPI_SR(SPI1) & SPI_SR_BSY) __asm__("nop");
+}
+
+uint8_t spi_read_write(uint8_t data) {
+    spi_wait();
+    spi_write(SPI1, data);
+    return spi_read(SPI1);
 }
 

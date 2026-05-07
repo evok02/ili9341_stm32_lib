@@ -65,6 +65,9 @@ void tft_setup(void) {
 
     /* Command sequence is taken from 
      * https://vivonomicon.com/2018/06/17/drawing-to-a-small-tft-display-the-ili9341-and-stm32/ */
+
+    //
+    // TODO: replace opcodes with command definitions
     
     tft_send_command(command_create(TFT_CMD_SOFTWARE_RESET, 0, 0));
     system_delay(150);
@@ -239,4 +242,36 @@ void tft_fill_pixel(uint16_t x, uint16_t y, uint16_t color) {
     tft_send_command(command_create(TFT_CMD_MEMORY_WRITE, buffer, sizeof(buffer)));
 
     SET_NSS(HIGH);
+}
+
+void tft_write_char(uint8_t ascii, uint8_t row, uint8_t col, uint16_t txt_color, uint16_t bg_color) {
+    // TODO: handle this better
+    if (ascii < 32) return;
+
+    row = (row < 1) ? 1 : row;
+    col = (col < 1) ? 1 : col;
+
+    // Each ACII character represents a rectangle 8 x 5 px
+    uint16_t buffer[8];
+    const uint8_t *ascii_char = ascii_5x8[ascii - 32];
+
+    // TODO: Optimize this loop
+    for (uint8_t index_col = 0; index_col < 5; index_col++) {
+        for (uint8_t index_row = 0; index_row < 8; index_row++) {
+            if (ascii_char[index_col] & (1 << index_row)) {
+                tft_fill_pixel(col * 5 + index_col, row * 8 + index_row, txt_color);
+            } else {
+                tft_fill_pixel(col * 5 + index_col, row * 8 + index_row, bg_color);
+            }
+        }
+    }
+}
+
+void tft_write_chars(const uint8_t* ascii, uint8_t cnt, uint8_t row, uint8_t col, uint16_t txt_color, uint16_t bg_color) {
+    // TODO: handle this better
+    if (cnt > MAX_COL_COUNT) return;
+
+    for (uint8_t index = 0; index < cnt; index++) {
+        tft_write_char(ascii[index], row, col + index, txt_color, bg_color);
+    }
 }

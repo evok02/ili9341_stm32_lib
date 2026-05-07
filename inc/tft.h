@@ -5,6 +5,7 @@
 
 #include "spi.h"
 #include "system.h"
+#include "font.h"
 
 #define TFT_HEIGHT  (320) // 320 / 8 = 40 (rows)
 #define TFT_WIDTH   (240) // 240 / 5 = 48 (chars/row)
@@ -43,5 +44,7 @@ void tft_fill_pixel(uint16_t x, uint16_t y, uint16_t color);
 void tft_fill_rectangle(uint16_t x0, uint16_t y0, uint16_t w, uint16_t l, uint16_t color);
 void tft_fill_screen(uint16_t color);
 void tft_draw_picture(uint16_t x0, uint16_t y0, uint16_t w, uint16_t h, uint16_t* data);
+void tft_write_char(uint8_t ascii, uint8_t row, uint8_t col, uint16_t txt_color, uint16_t bg_color);
 
+void tft_write_chars(const uint8_t* ascii, uint8_t cnt, uint8_t row, uint8_t col, uint16_t txt_color, uint16_t bg_color);
 #endif

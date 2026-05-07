@@ -17,9 +17,11 @@
 }
 
 void spi_setup(void);
-void spi_write_data(uint8_t* data, uint32_t length);
+void spi_write_data(const uint8_t* data, uint32_t length);
 void spi_read_data(uint8_t* data, uint32_t length);
+uint8_t spi_read_write(uint8_t data);
 void spi_send_byte_blocking(uint8_t data);
+uint8_t spi_read_byte(void);
 void spi_wait(void);
 
 #endif
