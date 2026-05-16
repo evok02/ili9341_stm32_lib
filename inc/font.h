@@ -8,7 +8,7 @@
 
 // COLOR VALUES
 #define BLACK     (0x0000U)
-#define RED       (0xF800)
+#define RED       (0xF800U)
 #define WHITE     (0xFFFFU)
 #define BLUE      (0x008FU)
 #define GREEN     (0x0F80U)

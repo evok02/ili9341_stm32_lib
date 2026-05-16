@@ -252,7 +252,6 @@ void tft_write_char(uint8_t ascii, uint8_t row, uint8_t col, uint16_t txt_color,
     col = (col < 1) ? 1 : col;
 
     // Each ACII character represents a rectangle 8 x 5 px
-    uint16_t buffer[8];
     const uint8_t *ascii_char = ascii_5x8[ascii - 32];
 
     // TODO: Optimize this loop
@@ -270,6 +269,10 @@ void tft_write_char(uint8_t ascii, uint8_t row, uint8_t col, uint16_t txt_color,
 void tft_write_chars(const uint8_t* ascii, uint8_t cnt, uint8_t row, uint8_t col, uint16_t txt_color, uint16_t bg_color) {
     // TODO: handle this better
     if (cnt > MAX_COL_COUNT) return;
+
+    for (uint8_t index = 0; index < MAX_COL_COUNT; index++) {
+        tft_write_char(' ', row, col + index, txt_color, bg_color);
+    }
 
     for (uint8_t index = 0; index < cnt; index++) {
         tft_write_char(ascii[index], row, col + index, txt_color, bg_color);

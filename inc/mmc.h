@@ -18,6 +18,8 @@
 #define MMC_SET_BLOCK_COUNT         (23)
 #define MMC_WRITE_SINGLE_BLOCK      (24)
 #define MMC_WRITE_MULTIPLE_BLOCK    (25)
+#define MMC_APP_SEND_OP_COND        (41)
+#define MMC_APP_CMD                 (55)
 #define MMC_READ_OCR                (58)
 
 #define SET_MMC_NSS(high) { \

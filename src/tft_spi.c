@@ -7,8 +7,6 @@
 #include "font.h"
 #include "mmc.h"
 
-#include <string.h>
-
 #define SQUARE_SIDE_LENGTH      (square_side_length)
 #define SQUARE_AREA(x)          (x * x)
 #define RECTANGLE_AREA(x, y)    (x * y)
@@ -21,12 +19,24 @@ int main(void) {
     system_rcc_setup();
     system_gpio_setup();
     system_systick_setup();
-    spi_setup();
-    tft_setup();
-
-    tft_fill_screen(WHITE);
+    spi_setup(SPI_CR1_BAUDRATE_FPCLK_DIV_2);
+    // tft_setup();
+// 
+    // tft_fill_screen(WHITE);
+// 
+    // const char* str = "Display initialization proces...";
+    // tft_write_chars(str, strlen(str), 1, 1,  BLACK, WHITE);
+// 
+    // str = "Display initialized successfully!";
+    // tft_write_chars(str, strlen(str), 1, 1,  BLACK, WHITE);
+    // 
+    // str = "Multi-Media Card init process...";
+    // tft_write_chars(str, strlen(str), 2, 1,  BLACK, WHITE);
 
     mmc_init();
+
+    // str = "Multi-Media Card initialized successfully!";
+    // tft_write_chars(str, strlen(str), 2, 1,  BLACK, WHITE);
 
     for (;;) {
         gpio_toggle(GPIOC, GPIO4);

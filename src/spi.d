@@ -20,12 +20,7 @@ src/spi.o: src/spi.c inc/spi.h libopencm3/include/libopencm3/stm32/gpio.h \
  libopencm3/include/libopencm3/stm32/rcc.h \
  libopencm3/include/libopencm3/stm32/f1/rcc.h \
  libopencm3/include/libopencm3/stm32/common/rcc_common_all.h inc/common.h \
- inc/system.h libopencm3/include/libopencm3/cm3/vector.h \
- libopencm3/include/libopencm3/cm3/nvic.h \
- libopencm3/include/libopencm3/dispatch/nvic.h \
- libopencm3/include/libopencm3/stm32/f1/nvic.h \
- libopencm3/include/libopencm3/cm3/systick.h \
- /usr/arm-none-eabi/include/stdlib.h \
+ inc/system.h /usr/arm-none-eabi/include/stdlib.h \
  /usr/arm-none-eabi/include/machine/ieeefp.h \
  /usr/arm-none-eabi/include/_ansi.h /usr/arm-none-eabi/include/newlib.h \
  /usr/arm-none-eabi/include/sys/config.h \
@@ -36,4 +31,12 @@ src/spi.o: src/spi.c inc/spi.h libopencm3/include/libopencm3/stm32/gpio.h \
  /usr/arm-none-eabi/include/sys/_types.h \
  /usr/arm-none-eabi/include/machine/_types.h \
  /usr/arm-none-eabi/include/sys/lock.h \
- /usr/arm-none-eabi/include/machine/stdlib.h
+ /usr/arm-none-eabi/include/machine/stdlib.h \
+ /usr/arm-none-eabi/include/string.h \
+ /usr/arm-none-eabi/include/sys/string.h \
+ libopencm3/include/libopencm3/cm3/vector.h \
+ libopencm3/include/libopencm3/cm3/nvic.h \
+ libopencm3/include/libopencm3/dispatch/nvic.h \
+ libopencm3/include/libopencm3/stm32/f1/nvic.h \
+ libopencm3/include/libopencm3/cm3/systick.h inc/mmc.h inc/spi.h \
+ inc/tft.h inc/font.h

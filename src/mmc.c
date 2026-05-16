@@ -30,11 +30,27 @@ typedef enum {
     CARD_IS_LOCKED,
 } err_token_t;
 
+static uint8_t crc7_compute(uint8_t* data, size_t length) {
+    uint8_t crc = 0;
+    for (int i = 0; i < length; i++) {
+        uint8_t d = data[i];
+        for (int bit = 0; bit < 8; bit++) {
+            crc <<= 1;
+            if ((d ^ crc) & 0x80) {
+                crc ^= 0x09; // Polynomial x^7 + x^3 + 1
+            }
+            d <<= 1;
+        }
+    }
+    return (crc << 1) | 1; // Align to bit 7-1 and set end bit
+}
 
 /* This is a general function. For single/multiple read/write com * mands use respected functions below... */
+static uint8_t mmc_write_command(uint8_t cmd, uint32_t arg) {
+    // Waiting if MMC is busy
+    _mmc_wait();
 
-static err_token_t mmc_write_command(uint8_t cmd, uint32_t arg) {
-    uint8_t buffer[6], r1;
+    uint8_t buffer[6], r1 = 0xFF;
 
     buffer[0] = cmd | 0x40;
     // Convert to little endian
@@ -49,13 +65,13 @@ static err_token_t mmc_write_command(uint8_t cmd, uint32_t arg) {
     } else if (cmd == MMC_SEND_IF_COND) {
         buffer[5] = 0x87;
     } else {
-        buffer[5] = 0;
+        buffer[5] = 0x01;
     }
     
     _mmc_write_buffer(buffer, sizeof(buffer));
 
     // Wait for the valid response
-    while ((r1 = spi_read_write(0xFF) & 0x1F)) __asm__("nop");
+    while ((r1 = spi_read_write(0xFF)) & 0x80);
 
     return r1;
 }
@@ -66,8 +82,8 @@ static int mcc_write_single_block(uint32_t block, const uint8_t* data, size_t le
     mmc_write_command(MMC_WRITE_SINGLE_BLOCK, block); 
 
     // Keep the clock running.
-    spi_read_write(0xFF);
-    spi_read_write(0xFF);
+    (void)spi_read_write(0xFF);
+    (void)spi_read_write(0xFF);
 
     spi_send_byte_blocking(MMC_TOKEN_SINGLE_WRITE);
     _mmc_write_buffer(data, length);
@@ -134,38 +150,59 @@ static int mcc_read_multiple_blocks(const uint32_t block, size_t count, uint8_t*
     return counter;
 }
 
-inline uint32_t mcc_get_block_size(void) {
+inline uint32_t mcc_get_sector_size(void) {
     return MMC_BLOCK_SIZE; 
 }
 
+typedef enum {
+    MMC_STATE_STARTING,
+    MMC_STATE_IS_IDLE,
+    MMC_STATE_IF_COND_RES_MATCHED,
+    MMC_STATE_IF_COND_RES_NOT_MATCHED,
+    MMC_STATE_APP_SEND_OP_COND,
+    MMC_STATE_READ_OCR,
+    MMC_STATE_SET_BLOCKLEN,
+    MMC_STATE_UNKNOWN_CARD,
+    MMC_STATE_DONE,
+} mmc_init_state;
+
+static mmc_init_state mmc_state = MMC_STATE_IS_IDLE;
+
+// TODO: write state machine which inlcudes full path
 int mmc_init(void) {
     // Init sequence is taken from https://elm-chan.org/docs/mmc/mmc_e.html 
 
+    // Setting SPI clock frequency to 100 - 400 kHz
+    spi_setup(SPI_CR1_BAUDRATE_FPCLK_DIV_256);
+
     // POWER SEQUENCE
     system_delay(5);
-    SET_MMC_NSS(HIGH);
-    for (int i = 80; i > 0; i--) spi_read_write(0xFF);
+    for (int i = 10; i > 0; i--) spi_read_write(0xFF);
 
-    if(mmc_write_command(MMC_GO_IDLE_STATE, 0) != ERR_TOKEN_NONE) {
-        const char* ouput = "Unknown card";
-        tft_write_chars(ouput, strlen(ouput), 1, 1, BLACK, WHITE);
-        return -1;
-    }
+    spi_setup(SPI_CR1_BAUDRATE_FPCLK_DIV_64);
 
-    if(mmc_write_command(MMC_SEND_IF_COND, 0) != ERR_TOKEN_NONE) {
-        const char* ouput = "Unknown card";
-        tft_write_chars(ouput, strlen(ouput), 1, 1, BLACK, WHITE);
-        return -1;
-    }
-
-    if((mmc_write_command(MMC_READ_OCR, 0) & 0x1) == 0) {
-        const char* ouput = "SD Ver.2+ (Byte address)";
-        tft_write_chars(ouput, strlen(ouput), 1, 1, BLACK, WHITE);
-        mmc_write_command(MMC_SET_BLOCKLEN, 512);
-        return 0;
-    }
-
-    const char* ouput = "SD Ver.2* (Block address)";
+    // SET CS LINE LOW.
     SET_MMC_NSS(LOW);
+    
+    if (mmc_write_command(MMC_GO_IDLE_STATE, 0x0) != 0x01) return -1;
+    if (mmc_write_command(MMC_SEND_IF_COND, 0x01AA) == 0) {
+        uint8_t buffer[4];
+        _mmc_read_buffer(buffer, sizeof(buffer));
+        if ((*(uint32_t*)buffer & 0xFFFF0000) != 0xAA010000) return -1;
+    } else return -1;
+
+    mmc_write_command(MMC_APP_CMD, 0x0);
+    if (mmc_write_command(MMC_APP_SEND_OP_COND, 0x40000000) != 0x0) return -1; 
+    
+
+    if (mmc_write_command(MMC_READ_OCR, 0x0) == 0) {
+        uint8_t buffer[4];
+        _mmc_read_buffer(buffer, sizeof(buffer));
+        if ((*(uint32_t*)buffer & 0x40000000) >> 30 == 1) return 0;
+        if ((*(uint32_t*)buffer & 0x40000000) >> 30 == 0) mmc_write_command(MMC_SET_BLOCKLEN, 0x00000200);
+    } else return -1;
+
+    // SET CS LINE HIGH
+    SET_MMC_NSS(HIGH);
     return 0;
 }
