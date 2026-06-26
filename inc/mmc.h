@@ -6,6 +6,10 @@
 
 #define MMC_BLOCK_SIZE (512)
 
+// #define MMC_FS_TYPE_FAT12
+// #define MMC_FS_TYPE_FAT16 
+#define MMC_FS_TYPE_FAT32 
+
 #define MMC_GO_IDLE_STATE           (0)
 #define MMC_SEND_OP_COND            (1)
 #define MMC_SEND_IF_COND            (8)
@@ -22,17 +26,19 @@
 #define MMC_APP_CMD                 (55)
 #define MMC_READ_OCR                (58)
 
-#define SET_MMC_NSS(high) { \
+#define _SET_MMC_NSS(high) { \
     spi_wait(); \
     (high) ? gpio_set(GPIOA, GPIO1) : gpio_clear(GPIOA, GPIO1); \
 }
 
+static uint16_t _mmc_capacity;
 
 static inline void _mmc_write_buffer(const uint8_t* buffer, size_t len) {
    spi_write_data(buffer, len); 
 }
 
 static inline void _mmc_read_buffer(uint8_t* buffer, size_t len) {
+    // TODO: CONVERT IT TO BIG ENDIAN
     spi_read_data(buffer, len);
 }
 
@@ -40,8 +46,19 @@ static inline void _mmc_wait(void) {
     while (spi_read_write(0xFF) != 0xFF) __asm__("nop");
 }
 
-// Exposed functions
-int mmc_init(void);
+// Exposed helper functions
 inline uint32_t mcc_get_sector_size(void);
+inline uint16_t get_mmc_capacity(void);
+
+// High level interface
+int mmc_init(void);
+
+uint8_t mmc_write_command(uint8_t cmd, uint32_t arg);
+
+int mmc_read_single_block(uint32_t block, size_t length, uint8_t* data);
+int mmc_read_multiple_blocks(const uint32_t block, size_t count, uint8_t* data);
+
+int mmc_write_single_block(uint32_t block, const uint8_t* data, size_t length);
+int mmc_write_multiple_blocks(const uint32_t block, size_t count, uint8_t* data);
 
 #endif

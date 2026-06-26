@@ -40,6 +40,7 @@ typedef struct {
 static command_t temp_command = { .command = 0, .arguments = 0, .argument_count = 0 };
 
 void tft_setup(void);
+void tft_set_brightness(uint8_t percentage_0_100);
 void tft_fill_pixel(uint16_t x, uint16_t y, uint16_t color);
 void tft_fill_rectangle(uint16_t x0, uint16_t y0, uint16_t w, uint16_t l, uint16_t color);
 void tft_fill_screen(uint16_t color);

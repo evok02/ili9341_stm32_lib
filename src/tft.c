@@ -9,6 +9,10 @@ static void hardware_reset(void) {
     system_delay(150);
 }
 
+void tft_set_brightness(uint8_t percentage_0_100) {
+   timer_set_oc_value(TIM3, TIM_OC3, percentage_0_100 * 10);
+}
+
 static void set_dcx_pin(bool high) {
     spi_wait();
 
@@ -58,6 +62,7 @@ static void tft_send_command(command_t* cmd) {
 
 
 void tft_setup(void) {
+    spi_setup(SPI_CR1_BAUDRATE_FPCLK_DIV_2);
     SET_NSS(LOW);
 
     hardware_reset();
@@ -68,6 +73,8 @@ void tft_setup(void) {
 
     //
     // TODO: replace opcodes with command definitions
+    //
+    tft_set_brightness(90);
     
     tft_send_command(command_create(TFT_CMD_SOFTWARE_RESET, 0, 0));
     system_delay(150);

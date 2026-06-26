@@ -28,29 +28,29 @@ typedef enum {
     ERR_TOKEN_CARD_ECC_FAILED,
     ERR_TOKEN_OUT_OF_RANGE,
     CARD_IS_LOCKED,
-} err_token_t;
+} mmc_err_token_t;
 
-static uint8_t crc7_compute(uint8_t* data, size_t length) {
+static uint8_t mmc_crc7(const uint8_t *data, size_t length) {                                           
     uint8_t crc = 0;
-    for (int i = 0; i < length; i++) {
-        uint8_t d = data[i];
-        for (int bit = 0; bit < 8; bit++) {
-            crc <<= 1;
-            if ((d ^ crc) & 0x80) {
-                crc ^= 0x09; // Polynomial x^7 + x^3 + 1
+    for (size_t i = 0; i < length; i++) {
+        for (uint8_t bit = 0; bit < 8; bit++) {
+            uint8_t data_bit = (data[i] >> (7 - bit)) & 0x01;
+            if (((crc >> 6) ^ data_bit) & 0x01) {
+                crc = ((crc << 1) ^ 0x09) & 0x7F;
+            } else {
+                crc = (crc << 1) & 0x7F;
             }
-            d <<= 1;
         }
     }
-    return (crc << 1) | 1; // Align to bit 7-1 and set end bit
+    return (crc << 1) | 0x01;
 }
 
 /* This is a general function. For single/multiple read/write com * mands use respected functions below... */
-static uint8_t mmc_write_command(uint8_t cmd, uint32_t arg) {
+uint8_t mmc_write_command(uint8_t cmd, uint32_t arg) {
     // Waiting if MMC is busy
     _mmc_wait();
 
-    uint8_t buffer[6], r1 = 0xFF;
+    uint8_t buffer[5], r1 = 0xFF;
 
     buffer[0] = cmd | 0x40;
     // Convert to little endian
@@ -59,16 +59,8 @@ static uint8_t mmc_write_command(uint8_t cmd, uint32_t arg) {
     buffer[3] = (arg >> 8) & 0xFF;
     buffer[4] = arg & 0xFF;
 
-    // Hard-coded CRC
-    if (cmd == MMC_GO_IDLE_STATE) {
-        buffer[5] = 0x95;
-    } else if (cmd == MMC_SEND_IF_COND) {
-        buffer[5] = 0x87;
-    } else {
-        buffer[5] = 0x01;
-    }
-    
     _mmc_write_buffer(buffer, sizeof(buffer));
+    spi_read_write(mmc_crc7(buffer, sizeof(buffer)));
 
     // Wait for the valid response
     while ((r1 = spi_read_write(0xFF)) & 0x80);
@@ -76,8 +68,7 @@ static uint8_t mmc_write_command(uint8_t cmd, uint32_t arg) {
     return r1;
 }
 
-
-static int mcc_write_single_block(uint32_t block, const uint8_t* data, size_t length) {
+int mcc_write_single_block(uint32_t block, const uint8_t* data, size_t length) {
     _mmc_wait();
     mmc_write_command(MMC_WRITE_SINGLE_BLOCK, block); 
 
@@ -91,7 +82,7 @@ static int mcc_write_single_block(uint32_t block, const uint8_t* data, size_t le
     return spi_read_write(0xFF);
 }
 
-static int mcc_write_multiple_blocks(uint32_t block, size_t count, uint8_t* data) {
+int mmc_write_multiple_blocks(uint32_t block, size_t count, uint8_t* data) {
     size_t counter = 0;
 
     _mmc_wait();
@@ -113,25 +104,27 @@ static int mcc_write_multiple_blocks(uint32_t block, size_t count, uint8_t* data
     return counter;
 }
 
-static int mcc_read_single_block(uint32_t block, size_t length, uint8_t* data) {
+int mmc_read_single_block(uint32_t block, size_t length, uint8_t* data) {
+    _SET_MMC_NSS(LOW);
     _mmc_wait();
     mmc_write_command(MMC_READ_SINGLE_BLOCK, block);
 
     // Keep the clock running.
+    uint8_t r = 0xFF;
     _mmc_wait();
-    (void)spi_read_write(0xFF);
-
-    if(spi_read_write(0xFF) != MMC_TOKEN_SINGLE_READ) return -1; 
+    // TODO: set timeout, to prevent possible halting
+    while ((r = spi_read_write(0xFF)) != MMC_TOKEN_SINGLE_READ) __asm__("nop");
     _mmc_read_buffer(data, length);
 
     // Skipping CRC.
-    (void)spi_read_byte(); 
-    (void)spi_read_byte(); 
-    
+    (void)spi_read_write(0xFF); 
+    (void)spi_read_write(0xFF); 
+
+    _SET_MMC_NSS(HIGH);
     return 0;
 }
 
-static int mcc_read_multiple_blocks(const uint32_t block, size_t count, uint8_t* data) {
+int mmc_read_multiple_blocks(const uint32_t block, size_t count, uint8_t* data) {
     size_t counter = 0;
 
     _mmc_wait();
@@ -166,13 +159,15 @@ typedef enum {
     MMC_STATE_DONE,
 } mmc_init_state;
 
-static mmc_init_state mmc_state = MMC_STATE_IS_IDLE;
+static mmc_init_state mmc_state;
 
-// TODO: write state machine which inlcudes full path
+// TODO: WRITE STATE MACHINE WHICH INLCUDES FULL PATH
 int mmc_init(void) {
     // Init sequence is taken from https://elm-chan.org/docs/mmc/mmc_e.html 
 
-    // Setting SPI clock frequency to 100 - 400 kHz
+    // SETTING SPI CLOCK FREQUENCY TO 100 - 400 KHZ
+    //
+    uint8_t cmd_resp = 0;
     spi_setup(SPI_CR1_BAUDRATE_FPCLK_DIV_256);
 
     // POWER SEQUENCE
@@ -182,27 +177,78 @@ int mmc_init(void) {
     spi_setup(SPI_CR1_BAUDRATE_FPCLK_DIV_64);
 
     // SET CS LINE LOW.
-    SET_MMC_NSS(LOW);
+    _SET_MMC_NSS(LOW);
     
-    if (mmc_write_command(MMC_GO_IDLE_STATE, 0x0) != 0x01) return -1;
-    if (mmc_write_command(MMC_SEND_IF_COND, 0x01AA) == 0) {
+    if ((cmd_resp = mmc_write_command(MMC_GO_IDLE_STATE, 0x0)) != MMC_R1_IDLE_STATE) {
+        if (cmd_resp == 0x03) {
+#ifdef DEBUG_INFO_ENABLE
+            printf_("MMC already initialized\r\n");
+#endif 
+            return 0; 
+        }
+        else {
+            _SET_MMC_NSS(HIGH);
+#ifdef DEBUG_INFO_ENABLE
+            printf_("Init procces was not successfull: final command MMC_GO_IDLE_STATE\r\n");
+#endif 
+            return -1;
+        }
+    }
+
+    // TODO: REPLACE GOTO WITH STATE MACHINE
+    while ( 1 ) {
+        uint8_t cmd_res;
+        if (mmc_write_command(MMC_SEND_IF_COND, 0x01AA) == MMC_R1_OK) {
+            uint8_t buffer[4];
+            _mmc_read_buffer(buffer, sizeof(buffer));
+            if ((*(uint32_t*)buffer & 0xFFFF0000) != 0xAA010000) {
+                _SET_MMC_NSS(HIGH);
+#ifdef DEBUG_INFO_ENABLE
+                printf_("Init procces was not successfull: final command MMC_SEND_IF_COND: != 0xAA010000\r\n");
+#endif 
+                return -1;
+            } 
+        } else {
+            _SET_MMC_NSS(HIGH);
+#ifdef DEBUG_INFO_ENABLE
+            printf_("Init procces was not successfull: final command MCC_SEND_IF_COND\r\n");
+#endif 
+            return -1;
+        } 
+
+ACMD_SEND:
+        mmc_write_command(MMC_APP_CMD, 0x0);
+
+        if ((cmd_res = mmc_write_command(MMC_APP_SEND_OP_COND, 0x40000000)) == MMC_R1_OK) { 
+            goto ACMD_LOOP_BREAK;
+        } else if (cmd_res == 0x01) {
+            goto ACMD_SEND;
+        } else continue;
+    }
+ACMD_LOOP_BREAK:
+    
+
+    if (mmc_write_command(MMC_READ_OCR, 0x0) == MMC_R1_OK) {
         uint8_t buffer[4];
         _mmc_read_buffer(buffer, sizeof(buffer));
-        if ((*(uint32_t*)buffer & 0xFFFF0000) != 0xAA010000) return -1;
-    } else return -1;
-
-    mmc_write_command(MMC_APP_CMD, 0x0);
-    if (mmc_write_command(MMC_APP_SEND_OP_COND, 0x40000000) != 0x0) return -1; 
-    
-
-    if (mmc_write_command(MMC_READ_OCR, 0x0) == 0) {
-        uint8_t buffer[4];
-        _mmc_read_buffer(buffer, sizeof(buffer));
-        if ((*(uint32_t*)buffer & 0x40000000) >> 30 == 1) return 0;
-        if ((*(uint32_t*)buffer & 0x40000000) >> 30 == 0) mmc_write_command(MMC_SET_BLOCKLEN, 0x00000200);
-    } else return -1;
+        // Checking CCS bit in OCR
+        if (!(buffer[0] & 0x40)) {
+            // Force block size to 512 bytes to work with FAT file system
+            mmc_write_command(MMC_SET_BLOCKLEN, 0x00000200);
+        }
+    } else {
+#ifdef DEBUG_INFO_ENABLE
+        printf_("Init procces was not successfull: final command MMC_READ_OCR\r\n");
+#endif 
+        _SET_MMC_NSS(HIGH);
+        return -1;
+    }
 
     // SET CS LINE HIGH
-    SET_MMC_NSS(HIGH);
+    _SET_MMC_NSS(HIGH);
+    system_delay(10);
+#ifdef DEBUG_INFO_ENABLE
+        printf_("MMC was initialized successfuly with MMC_R1_OK\r\n");
+#endif 
     return 0;
 }

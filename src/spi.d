@@ -38,5 +38,8 @@ src/spi.o: src/spi.c inc/spi.h libopencm3/include/libopencm3/stm32/gpio.h \
  libopencm3/include/libopencm3/cm3/nvic.h \
  libopencm3/include/libopencm3/dispatch/nvic.h \
  libopencm3/include/libopencm3/stm32/f1/nvic.h \
- libopencm3/include/libopencm3/cm3/systick.h inc/mmc.h inc/spi.h \
- inc/tft.h inc/font.h
+ libopencm3/include/libopencm3/cm3/systick.h \
+ libopencm3/include/libopencm3/stm32/f1/timer.h \
+ libopencm3/include/libopencm3/stm32/common/timer_common_all.h \
+ inc/printf.h /usr/lib/gcc/arm-none-eabi/14.2.0/include/stdarg.h \
+ inc/mmc.h inc/spi.h inc/tft.h inc/font.h

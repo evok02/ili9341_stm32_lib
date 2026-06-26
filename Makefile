@@ -1,4 +1,5 @@
 V = 1
+DEBUG_FLAG = 1
 ifeq ($(V), 1)
 	Q := @
 endif
@@ -10,7 +11,7 @@ LDSCRIPT       = linkerscript.ld
 PREFIX         ?= arm-none-eabi
 STFLASH        = st-flash
 
-OPT            = -Os
+# OPT            = -Os
 DEBUG          = -ggdb3
 CSTD           = -std=c11
 
@@ -26,6 +27,9 @@ OBJS           += $(SRC_DIR)/system.o
 OBJS           += $(SRC_DIR)/spi.o
 OBJS           += $(SRC_DIR)/tft.o
 OBJS           += $(SRC_DIR)/mmc.o
+OBJS           += $(SRC_DIR)/printf.o
+OBJS           += $(SRC_DIR)/uart.o
+OBJS           += $(SRC_DIR)/fat32.o
 
 include $(OPENCM3_DIR)/mk/genlink-config.mk
 include $(OPENCM3_DIR)/mk/gcc-config.mk
@@ -34,6 +38,9 @@ CFLAGS         += $(OPT) $(CSTD) $(DEBUG)
 CFLAGS         += -Wextra -Wshadow -Wimplicit-function-declaration
 CFLAGS         += -Wredundant-decls -Wmissing-prototypes -Wstrict-prototypes
 CFLAGS         += -fno-common -ffunction-sections -fdata-sections
+ifeq ($(DEBUG_FLAG), 1) 
+	CFLAGS += -DDEBUG_INFO_ENABLE
+endif
 
 CPPFLAGS       += -MD -Wall -Wundef
 CPPFLAGS       += -I$(INC_DIR) $(DEFS)
