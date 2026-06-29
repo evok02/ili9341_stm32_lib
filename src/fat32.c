@@ -55,7 +55,7 @@ static inline int _fat_strfind( const char *in, const char c, size_t len ) {
         //if ( in[idx] == 'c' ) return idx;
     //}
     //return -1;
-    int counter = 0;
+    size_t counter = 0;
     while ( *in++ != c ) {
         counter++;
         if ( *in == '\0' || counter > len ) break;
@@ -64,9 +64,14 @@ static inline int _fat_strfind( const char *in, const char c, size_t len ) {
 }
 
 
-static inline void fat_read( fat_fs_t *fs, uint32_t sector, size_t length, uint8_t *data ) {
+static inline void fat_get_sector( fat_fs_t *fs, uint32_t sector, size_t length, uint8_t *data ) {
     ( void )mmc_read_single_block(sector, length, data);
     fs->last_sector_read = sector;
+}
+
+static inline void fat_get_multiple_sectors( fat_fs_t *fs, uint32_t sector, size_t length, uint8_t *data ) {
+    int off = mmc_read_multiple_blocks(sector, length, data);
+    fs->last_sector_read = sector + off;
 }
 
 static inline int fat_cluster_offset( fat_fs_t *fs, uint32_t cluster ) {
@@ -119,7 +124,7 @@ static inline int fat_entry_sec_offset( fat_fs_t *fs, uint32_t entry ) {
 static inline uint32_t fat_entry( fat_fs_t *fs, uint32_t entry ) {
     int sector = fat_entry_sector_num( fs, entry );
     int offset = fat_entry_sec_offset( fs, entry );
-    fat_read( fs, sector, sizeof( fs->sector_buffer ), fs->sector_buffer ); 
+    fat_get_sector( fs, sector, sizeof( fs->sector_buffer ), fs->sector_buffer ); 
     fs->last_fat_read = entry;
     return *( uint32_t * )&fs->sector_buffer[offset] & FAT_EOC;
 }
@@ -211,7 +216,7 @@ static int fat_path_to_dospath( char *restrict dospath, const char *restrict pat
     return 0;
 }
 
-static int fat_traverse_sector( uint8_t sector[MMC_BLOCK_SIZE], fat_sdir_entry_t *dir_entry, char *dos_name ) {
+static int fat_traverse_dir_entries( uint8_t sector[MMC_BLOCK_SIZE], fat_sdir_entry_t *dir_entry, char *dos_name ) {
     // TODO: Do conditional compilational blocks for other sub systems
     for ( uint16_t i = 0; i < MMC_BLOCK_SIZE; i += 32 ) {
         _fat_memcpy(dir_entry, &sector[i], 32);
@@ -224,16 +229,14 @@ static int fat_traverse_sector( uint8_t sector[MMC_BLOCK_SIZE], fat_sdir_entry_t
 
 static int fat_file_is_present( fat_fs_t *fs, char *dir_name, fat_sdir_entry_t *dir_entry, uint32_t clus_num ) {
     uint32_t sector_offset = 0;
-    int op_res = 0;
     do {
-        BPOINT();
         sector_offset = fat_cluster_offset( fs, clus_num );
         int not_found_c = 0;
         for ( size_t sect_idx = sector_offset; sect_idx < sector_offset + fs->sectors_per_cluster; sect_idx++ ) {
             if ( not_found_c > 10 ) break;
 
-            fat_read( fs, sect_idx, sizeof( fs->sector_buffer ), fs->sector_buffer );
-            if ( fat_traverse_sector( fs->sector_buffer, dir_entry, dir_name ) == 0 ) {
+            fat_get_sector( fs, sect_idx, sizeof( fs->sector_buffer ), fs->sector_buffer );
+            if ( fat_traverse_dir_entries( fs->sector_buffer, dir_entry, dir_name ) == 0 ) {
                 return 0;
             } else not_found_c++;
         }
@@ -278,23 +281,60 @@ static int fat_lookup(  fat_fs_t *fs, const char *path, size_t len, fat_sdir_ent
     return 0;
 }
 
+size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_fs_t *fs, fat_err_e *err ) {
+    if ( file->mode & ( O_RDONLY & ( O_APPEND | O_TRUNC | O_WRONLY | O_RDWR ) ) ) {
+        *err |= FAT_ERR_MODE_CONFILICT;
+        return 0;
+    } 
+    
+    size_t buf_idx = 0;
+    size_t sect_null = fat_cluster_offset( fs, file->curr_clus );     // First sector of the current cluster
+
+    if ( _fat_memcpy( buffer, file->file_buf, fs->bytes_per_sector ) == - 1 ) {
+        *err |= FAT_ERR_NULL_POINTER;
+        return 0; 
+    }
+    buf_idx += fs->bytes_per_sector;
+
+    while ( buf_idx < size && buf_idx < file->dir_entry.dir_file_size ) {
+        file->sect_off++;
+        fat_get_sector( fs, sect_null + file->sect_off, fs->bytes_per_sector, file->file_buf );
+        _fat_memcpy( &buffer[buf_idx], file->file_buf, fs->bytes_per_sector );
+        buf_idx += fs->bytes_per_sector;
+
+        if ( file->sect_off == fs->sectors_per_cluster ) {
+            if ( ( file->curr_clus = fat_entry( fs, file->curr_clus ) ) == FAT_EOC ) {
+                *err |= FAT_ERR_EOF;
+                break;
+            } 
+            sect_null = fat_cluster_offset( fs, file->curr_clus ); file->sect_off = 0;
+        }
+    }
+    
+    if ( buf_idx > size ) *err |= FAT_ERR_BUF_OVERFLOW;
+    if ( buf_idx >= file->dir_entry.dir_file_size ) *err |= FAT_ERR_EOF;
+
+    return buf_idx;
+}
+
 
 fat_file_t *fat32_fopen(  fat_fs_t *fs, const char *path, uint8_t mode ) {
     // TODO: Define syslock exectuion mode for parallel MCUs
+    // TODO: Add err input parameter
     int fd = fat_find_fd();
     if ( fd < 0 ) return NULL;
     if ( path[0] != '/' ) return NULL;
 
     fat_sdir_entry_t sdir;
-    if ( fat_lookup( fs, path, _fat_strlen( path ), &sdir ) == 0  ) {
-        _fat_memcpy( fd_table[fd].path, ( void * )path, _fat_strlen( path ) );
-        _fat_memcpy( &fd_table[fd], ( void * )&sdir, sizeof( fat_sdir_entry_t ) );
-        int clus_off = fat_cluster_offset( fs, CLUS_LO_PLUS_HI( sdir.dir_fst_clus_lo, sdir.dir_fst_clus_hi ) );
-        fat_read( fs, clus_off, sizeof( fd_table[fd].file_buf ), fd_table[fd].file_buf );
-        fd_table[fd].mode = mode; 
-    } else {
-        return NULL;
-    }
+    if ( fat_lookup( fs, path, _fat_strlen( path ), &sdir ) != 0  ) return NULL;
+
+    _fat_memcpy( fd_table[fd].path, ( void * )path, _fat_strlen( path ) );
+    _fat_memcpy( &fd_table[fd], ( void * )&sdir, sizeof( fat_sdir_entry_t ) );
+    size_t clus_off = fat_cluster_offset( fs, CLUS_LO_PLUS_HI( sdir.dir_fst_clus_lo, sdir.dir_fst_clus_hi ) );
+    fat_get_sector( fs, clus_off, sizeof( fd_table[fd].file_buf ), fd_table[fd].file_buf );
+    fd_table[fd].curr_clus = CLUS_LO_PLUS_HI( sdir.dir_fst_clus_lo, sdir.dir_fst_clus_hi );
+    fd_table[fd].sect_off = 0;
+    fd_table[fd].mode = mode; 
 
     return &fd_table[fd];
 }
@@ -304,7 +344,7 @@ fat_file_t *fat32_fopen(  fat_fs_t *fs, const char *path, uint8_t mode ) {
 int fat32_mount( uint32_t start_addr, fat_fs_t* fs ) {
     fat_boot_sector_t boot_sector = { 0 };
 
-    fat_read( fs, start_addr, sizeof( fs->sector_buffer ), fs->sector_buffer );
+    fat_get_sector( fs, start_addr, sizeof( fs->sector_buffer ), fs->sector_buffer );
     _fat_memcpy( &boot_sector, fs->sector_buffer, sizeof( fs->sector_buffer ) );
 
 
@@ -352,7 +392,7 @@ int fat32_mount( uint32_t start_addr, fat_fs_t* fs ) {
     if ( *( uint16_t * )boot_sector.bpb_root_ent_cnt != 0 ) {
 #if defined( DEBUG_INFO_ENABLE )
         printf_( "fat32.c:%d | for fat32 fs root entry count value should be equal to 0: actual value: %d\r\n",
-                __LINE__, *( uint16_t * )boot_sector.bpb_root_ent_cnt );
+                __LINE__, * ( uint16_t * )boot_sector.bpb_root_ent_cnt );
 #endif
         return -1;
     }

@@ -15,17 +15,6 @@
 
 static uint32_t square_side_length;
 
-static int _memcpy(void *restrict dest, void *const restrict src, size_t len) {
-    if (dest == 0 || src == 0) {
-#if defined(DEBUG_INFO_ENABLE)
-        printf_("fat32.c:%d | unexpected input: null_pointer dereference\r\n", __LINE__);
-#endif
-        return -1;
-    } 
-    for (size_t i = 0; i < len; i++) ((uint8_t *)dest)[i] = ((uint8_t *)src)[i]; 
-    return 0;
-}
-
 int main(void) {
     static fat_fs_t fs;
 
@@ -40,5 +29,21 @@ int main(void) {
     fat32_mount(64, &fs);
 
 
-    fat_file_t *f = fat32_fopen(&fs, "/lowbytes/rocks.jpg", O_OPEN);
+    uint8_t buf[4096];
+    fat_err_e err = FAT_ERR_NONE;
+    fat_file_t *f = fat32_fopen( &fs, "/lowbytes/rocks.jpg", O_OPEN | O_RDONLY );
+    size_t buf_off = 0;
+    uint32_t start = get_current_counter();
+    while ( 1 ) {
+        buf_off = fat32_fread( buf, sizeof( buf ), f, &fs, &err );
+        if ( err & FAT_ERR_EOF ) {
+            printf_( "Image was read successfully! \r\n" );
+            break;
+        } else if ( err & FAT_ERR_BUF_OVERFLOW ) {
+            printf_( "Buffer overflow occured, change the size of the buffer! \r\n " );
+        } 
+    } 
+    uint32_t end = get_current_counter();
+    uint32_t time = ( end - start ) / 1000;
+    BPOINT();
 }

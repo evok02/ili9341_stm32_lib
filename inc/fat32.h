@@ -217,12 +217,23 @@ typedef struct {
     fat_sdir_entry_t    dir_entry;
     char                path[MAX_FILE_PATH_LENGTH];
     uint8_t             file_buf[512];
+    size_t              sect_off;
+    size_t              curr_clus;
     fat_fflag_t         mode;
 } fat_file_t;
+
+typedef enum {
+    FAT_ERR_NONE                = 0,
+    FAT_ERR_EOF                 = 1,
+    FAT_ERR_BUF_OVERFLOW        = 2,
+    FAT_ERR_MODE_CONFILICT      = 4,
+    FAT_ERR_BAD_FILE_SIZE       = 8,
+    FAT_ERR_NULL_POINTER        = 16,
+} fat_err_e;
 
 
 int fat32_mount( uint32_t start_addr, fat_fs_t *fs );
 fat_file_t *fat32_fopen( fat_fs_t *fs, const char *path, uint8_t mode );
-int fat32_fread( uint32_t file_ent_offset, fat_fs_t *fs );
+size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_fs_t *fs, fat_err_e *err );
 
 #endif

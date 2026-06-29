@@ -124,7 +124,7 @@ int mmc_read_single_block(uint32_t block, size_t length, uint8_t* data) {
     return 0;
 }
 
-int mmc_read_multiple_blocks(const uint32_t block, size_t count, uint8_t* data) {
+size_t mmc_read_multiple_blocks(const uint32_t block, size_t count, uint8_t* data) {
     size_t counter = 0;
 
     _mmc_wait();
@@ -250,5 +250,6 @@ ACMD_LOOP_BREAK:
 #ifdef DEBUG_INFO_ENABLE
         printf_("MMC was initialized successfuly with MMC_R1_OK\r\n");
 #endif 
+    spi_setup( SPI_CR1_BAUDRATE_FPCLK_DIV_8 );
     return 0;
 }
