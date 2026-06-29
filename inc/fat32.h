@@ -204,6 +204,7 @@ typedef struct {
 #define MAX_FILE_NAME_LENGTH ( 64U )
 
 typedef enum {
+    O_NONE              = 0x00U,
     O_OPEN              = 0x01U,
     O_RDONLY            = 0x02U,
     O_APPEND            = 0x04U,
@@ -234,6 +235,7 @@ typedef enum {
 
 int fat32_mount( uint32_t start_addr, fat_fs_t *fs );
 fat_file_t *fat32_fopen( fat_fs_t *fs, const char *path, uint8_t mode );
+void fat32_fclose( fat_file_t *file );
 size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_fs_t *fs, fat_err_e *err );
 
 #endif

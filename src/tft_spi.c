@@ -45,5 +45,7 @@ int main(void) {
     } 
     uint32_t end = get_current_counter();
     uint32_t time = ( end - start ) / 1000;
+
+    fat32_fclose( f ); 
     BPOINT();
 }

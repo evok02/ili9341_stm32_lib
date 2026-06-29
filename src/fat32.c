@@ -281,6 +281,7 @@ static int fat_lookup(  fat_fs_t *fs, const char *path, size_t len, fat_sdir_ent
     return 0;
 }
 
+// TODO: Implement new version using multiple read function, mesure perfomance
 size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_fs_t *fs, fat_err_e *err ) {
     if ( file->mode & ( O_RDONLY & ( O_APPEND | O_TRUNC | O_WRONLY | O_RDWR ) ) ) {
         *err |= FAT_ERR_MODE_CONFILICT;
@@ -315,6 +316,10 @@ size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_fs_t *fs, f
     if ( buf_idx >= file->dir_entry.dir_file_size ) *err |= FAT_ERR_EOF;
 
     return buf_idx;
+}
+
+void fat32_fclose( fat_file_t *file ) {
+    file->mode = O_NONE;
 }
 
 
