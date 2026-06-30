@@ -95,7 +95,7 @@ static inline int fat_entry_sector_num( fat_fs_t *fs, uint32_t entry ) {
             return fs->fat_start_sector + ( int )( ( entry * 4 ) / fs->bytes_per_sector );
         } break;
         default: {
-            printf_( "fat32.c:%d | Malformed FAT sub type", __LINE__ );
+            printf_( "fat32.c:%d , Malformed FAT sub type\r\n", __LINE__ );
             return -1;
         } break;
     }
@@ -351,6 +351,7 @@ int fat32_mount( uint32_t start_addr, fat_fs_t* fs ) {
 
     fat_get_sector( fs, start_addr, sizeof( fs->sector_buffer ), fs->sector_buffer );
     _fat_memcpy( &boot_sector, fs->sector_buffer, sizeof( fs->sector_buffer ) );
+    BPOINT();
 
 
     if ( *( uint16_t * )boot_sector.bpb_bytes_per_sec != MMC_BLOCK_SIZE ) {

@@ -18,11 +18,14 @@ void system_rcc_setup(void) {
 
     rcc_periph_clock_enable(RCC_TIM3);
     rcc_periph_clock_enable(RCC_USART3);
+    rcc_periph_clock_enable(RCC_DMA1);
 }
 
 void system_gpio_setup(void) {
     // Onboard LED
     gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO13);
+
+    gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO14);
 
     // GPIO2 - DC, GPIO3 - RST
     gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO2 | GPIO3);
@@ -31,7 +34,7 @@ void system_gpio_setup(void) {
     gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_10_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO7 | GPIO5);
     
     // GPIO4 - CS, GPOIO1 - SD-CS 
-    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_10_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO4 | GPIO1);
+    gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO4 | GPIO1);
 
     // MISO1
     gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_PULL_UPDOWN, GPIO6);

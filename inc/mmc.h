@@ -37,9 +37,19 @@ static inline void _mmc_write_buffer(const uint8_t* buffer, size_t len) {
    spi_write_data(buffer, len); 
 }
 
+static inline void _mmc_write_buffer_dma(const uint8_t* buffer, size_t len, uint8_t *dummy_rx ) {
+    spi_dma_xmit( buffer, len, dummy_rx, len );
+    spi_dma_wait();
+}
+
 static inline void _mmc_read_buffer(uint8_t* buffer, size_t len) {
     // TODO: CONVERT IT TO BIG ENDIAN
     spi_read_data(buffer, len);
+}
+
+static inline void _mmc_read_buffer_dma( uint8_t* buffer, size_t len, uint8_t const *dummy_tx ) {
+    spi_dma_xmit( dummy_tx, len, buffer, len );
+    spi_dma_wait();
 }
 
 static inline void _mmc_wait(void) {
