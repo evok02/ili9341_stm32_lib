@@ -22,7 +22,7 @@ int main(void) {
     system_gpio_setup();
     system_systick_setup();
     pwm_setup();
-    spi_setup(SPI_CR1_BAUDRATE_FPCLK_DIV_2);
+    spi_setup(SPI_CR1_BAUDRATE_FPCLK_DIV_8);
     uart_setup();
     mmc_init();
     
@@ -44,7 +44,10 @@ int main(void) {
         } 
     } 
     uint32_t end = get_current_counter();
-    uint32_t time = ( end - start ) / 1000;
+    uint32_t time = ( end - start );
+#if defined( DEBUG_INFO_ENABLE )
+    printf_( "Time to read the file: %d\r\n", time );
+#endif
 
     fat32_fclose( f ); 
     BPOINT();

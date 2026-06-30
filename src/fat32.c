@@ -291,19 +291,27 @@ size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_fs_t *fs, f
     size_t buf_idx = 0;
     size_t sect_null = fat_cluster_offset( fs, file->curr_clus );     // First sector of the current cluster
 
-    if ( _fat_memcpy( buffer, file->file_buf, fs->bytes_per_sector ) == - 1 ) {
-        *err |= FAT_ERR_NULL_POINTER;
-        return 0; 
-    }
-    buf_idx += fs->bytes_per_sector;
-
     while ( buf_idx < size && buf_idx < file->dir_entry.dir_file_size ) {
         file->sect_off++;
-        fat_get_sector( fs, sect_null + file->sect_off, fs->bytes_per_sector, file->file_buf );
-        _fat_memcpy( &buffer[buf_idx], file->file_buf, fs->bytes_per_sector );
-        buf_idx += fs->bytes_per_sector;
 
-        if ( file->sect_off == fs->sectors_per_cluster ) {
+        size_t max_in_cluster = fs->sectors_per_cluster - file->sect_off;
+        size_t max_in_buf = ( size - buf_idx ) / fs->bytes_per_sector;
+        size_t max_in_file = ( file->dir_entry.dir_file_size - buf_idx ) / fs->bytes_per_sector;
+
+        size_t batch = max_in_cluster;
+        if ( max_in_buf  < batch ) batch = max_in_buf;
+        if ( max_in_file < batch ) batch = max_in_file;
+
+        if ( batch > 1 ) {
+            fat_get_multiple_sectors( fs, sect_null + file->sect_off, batch, &buffer[buf_idx] );
+            buf_idx += batch * fs->bytes_per_sector;
+            file->sect_off += batch - 1;
+        } else {
+            fat_get_sector( fs, sect_null + file->sect_off, fs->bytes_per_sector, &buffer[buf_idx] );
+            buf_idx += fs->bytes_per_sector;
+        }
+
+        if ( file->sect_off >= fs->sectors_per_cluster ) {
             if ( ( file->curr_clus = fat_entry( fs, file->curr_clus ) ) == FAT_EOC ) {
                 *err |= FAT_ERR_EOF;
                 break;
@@ -351,8 +359,6 @@ int fat32_mount( uint32_t start_addr, fat_fs_t* fs ) {
 
     fat_get_sector( fs, start_addr, sizeof( fs->sector_buffer ), fs->sector_buffer );
     _fat_memcpy( &boot_sector, fs->sector_buffer, sizeof( fs->sector_buffer ) );
-    BPOINT();
-
 
     if ( *( uint16_t * )boot_sector.bpb_bytes_per_sec != MMC_BLOCK_SIZE ) {
 #if defined( DEBUG_INFO_ENABLE )

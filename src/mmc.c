@@ -198,19 +198,27 @@ int mmc_read_single_block( uint32_t block, size_t length, uint8_t *data ) {
 
 size_t mmc_read_multiple_blocks( const uint32_t block, size_t count, uint8_t *data ) {
     size_t counter = 0;
+    uint8_t r = 0;
 
+    _SET_MMC_NSS( LOW );
     _mmc_wait(  );
     mmc_write_command( MMC_SET_BLOCK_COUNT, count );
     mmc_write_command( MMC_READ_MULTIPLE_BLOCK, block );
 
     while ( counter != count ) {
-        if ( spi_read_byte(  ) != MMC_TOKEN_MULTIPLE_READ ) return counter;
+        _mmc_wait(  );
+        while ( ( r = spi_read_write( 0xFF ) ) != MMC_TOKEN_MULTIPLE_READ )
+            __asm__( "nop" );
         _mmc_read_buffer_dma( data, MMC_BLOCK_SIZE, dummy_tx );
-        // Skipping CRC.
-        ( void )spi_read_byte(  );
-        ( void )spi_read_byte(  );
+        ( void )spi_read_write( 0xFF );
+        ( void )spi_read_write( 0xFF );
         counter++;
+        data += MMC_BLOCK_SIZE;
     }
+
+    mmc_write_command( MMC_STOP_TRANSMISSION, 0 );
+    _mmc_wait(  );
+    _SET_MMC_NSS( HIGH );
 
     return counter;
 }
@@ -246,7 +254,7 @@ int mmc_init( void ) {
     system_delay( 5 );
     for ( int i = 10; i > 0; i-- ) spi_read_write( 0xFF );
 
-    spi_setup( SPI_CR1_BAUDRATE_FPCLK_DIV_64 );
+    spi_setup( SPI_CR1_BAUDRATE_FPCLK_DIV_8 );
 
     // SET CS LINE LOW.
     _SET_MMC_NSS( LOW );
@@ -322,6 +330,6 @@ ACMD_LOOP_BREAK:
 #ifdef DEBUG_INFO_ENABLE
         printf_( "MMC was initialized successfuly with MMC_R1_OK\r\n" );
 #endif 
-    spi_setup(  SPI_CR1_BAUDRATE_FPCLK_DIV_8  );
+    spi_setup(  SPI_CR1_BAUDRATE_FPCLK_DIV_4 );
     return 0;
 }
