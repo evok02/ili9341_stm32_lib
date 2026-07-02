@@ -65,12 +65,12 @@ static inline int _fat_strfind( const char *in, const char c, size_t len ) {
 
 
 static inline void fat_get_sector( fat_fs_t *fs, uint32_t sector, size_t length, uint8_t *data ) {
-    ( void )mmc_read_single_block(sector, length, data);
+    ( void )mmc_read_single_block( sector, length, data );
     fs->last_sector_read = sector;
 }
 
 static inline void fat_get_multiple_sectors( fat_fs_t *fs, uint32_t sector, size_t length, uint8_t *data ) {
-    int off = mmc_read_multiple_blocks(sector, length, data);
+    int off = mmc_read_multiple_blocks( sector, length, data );
     fs->last_sector_read = sector + off;
 }
 
@@ -307,7 +307,6 @@ size_t fat32_lseek( size_t offset, fat_file_t *file, fat_whence_e whence, fat_fs
     size_t clus_idx = 0;
     size_t sect_off = 0, char_off = 0, clus_off = 0;
     if ( whence == SEEK_CUR ) {
-
         sect_off = file->sect_off + ( ( file->char_off + offset ) / fs->bytes_per_sector ); 
         char_off = ( file->char_off + offset ) % fs->bytes_per_sector;
 
@@ -319,9 +318,7 @@ size_t fat32_lseek( size_t offset, fat_file_t *file, fat_whence_e whence, fat_fs
             if ( tmp_clus > 0 ) file->curr_clus = tmp_clus;
             else return 0;
         }
-
     } else if ( whence == SEEK_SET ) {
-
         sect_off = offset / fs->bytes_per_sector; 
         char_off = offset % fs->bytes_per_sector;
         size_t clus_bup = file->curr_clus;
@@ -341,7 +338,6 @@ size_t fat32_lseek( size_t offset, fat_file_t *file, fat_whence_e whence, fat_fs
                 return 0;
             }
         }
-
     } else {
         *err |= FAT_ERR_IO;
         return 0;
@@ -354,19 +350,35 @@ size_t fat32_lseek( size_t offset, fat_file_t *file, fat_whence_e whence, fat_fs
 
 // TODO: Implement new version using multiple read function, mesure perfomance
 size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_fs_t *fs, fat_err_e *err ) {
-    if ( file->mode & ( O_RDONLY & ( O_APPEND | O_TRUNC | O_WRONLY | O_RDWR ) ) ) {
+
+    if ( !( file->mode & O_RDONLY ) && !( file->mode & O_RDWR ) ) {
         *err |= FAT_ERR_MODE_CONFILICT;
         return 0;
     } 
-    
-    size_t buf_idx = 0;
-    size_t sect_null = fat_cluster_offset( fs, file->curr_clus );     // First sector of the current cluster
 
-    while ( buf_idx < size && buf_idx < file->dir_entry.dir_file_size ) {
+    if ( size % fs->bytes_per_sector != 0 ) {
+        *err |= FAT_ERR_IO;
+        return 0;
+    }
+
+    static size_t read_bytes = 0;
+
+    size_t buf_idx = 0, sect_null = fat_cluster_offset( fs, file->curr_clus );     // First sector of the current cluster
+
+    if ( file->char_off > 0 ) {
+        fat_get_sector( fs, sect_null + file->sect_off, fs->bytes_per_sector, file->file_buf );
+        _fat_memcpy( buffer, &file->file_buf[file->char_off], fs->bytes_per_sector - file->char_off );
+        size_t l_len = fs->bytes_per_sector - file->char_off; 
+        buf_idx += l_len; read_bytes += l_len;
+        file->char_off = 0;
+        file->sect_off++;
+    }
+
+    while ( buf_idx < size ) {
 
         size_t max_in_cluster = fs->sectors_per_cluster - file->sect_off;
         size_t max_in_buf = ( size - buf_idx ) / fs->bytes_per_sector;
-        size_t max_in_file = ( file->dir_entry.dir_file_size - buf_idx ) / fs->bytes_per_sector;
+        size_t max_in_file = ( file->dir_entry.dir_file_size - read_bytes ) / fs->bytes_per_sector;
 
         size_t batch = max_in_cluster;
         if ( max_in_buf  < batch ) batch = max_in_buf;
@@ -374,25 +386,38 @@ size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_fs_t *fs, f
 
         if ( batch > 1 ) {
             fat_get_multiple_sectors( fs, sect_null + file->sect_off, batch, &buffer[buf_idx] );
-            buf_idx += batch * fs->bytes_per_sector;
-            file->sect_off += batch - 1;
-        } else {
+            size_t l_len = batch * fs->bytes_per_sector;
+            buf_idx += l_len; read_bytes += l_len;
+            file->sect_off += batch;
+        } else if ( batch == 1 ) {
             fat_get_sector( fs, sect_null + file->sect_off, fs->bytes_per_sector, &buffer[buf_idx] );
             buf_idx += fs->bytes_per_sector;
+            read_bytes += fs->bytes_per_sector;
             file->sect_off++;
+        } else if ( batch == 0 ) {
+            size_t l_len = size - buf_idx;
+            fat_get_sector( fs, sect_null + file->sect_off, fs->bytes_per_sector, file->file_buf );
+            _fat_memcpy( &buffer[buf_idx], file->file_buf, l_len );  // sect_off is not increasing until it is fully in buffer
+            buf_idx += l_len; file->char_off += l_len; read_bytes += l_len;
+        } else {
+            *err |= FAT_ERR_UNDEFINED;
+            break;
         }
 
         if ( file->sect_off >= fs->sectors_per_cluster ) {
             if ( ( file->curr_clus = fat_entry( fs, file->curr_clus ) ) == FAT_EOC ) {
                 *err |= FAT_ERR_EOF;
+                read_bytes = 0;
                 break;
             } 
             sect_null = fat_cluster_offset( fs, file->curr_clus ); file->sect_off = 0;
         }
     }
-    
-    if ( buf_idx > size ) *err |= FAT_ERR_BUF_OVERFLOW;
-    if ( buf_idx >= file->dir_entry.dir_file_size ) *err |= FAT_ERR_EOF;
+
+    if ( read_bytes >= file->dir_entry.dir_file_size ) {
+        *err |= FAT_ERR_EOF;
+        read_bytes = 0;
+    } 
 
     return buf_idx;
 }

@@ -31,15 +31,10 @@ int main(void) {
 
     uint8_t buf[4096];
     fat_err_e err = FAT_ERR_NONE;
-    fat_file_t *f = fat32_fopen( &fs, "/lowbytes/moon.jpg", O_OPEN | O_RDONLY );
-    fat32_lseek( 3, f, SEEK_CUR, &fs, &err );
-    fat32_lseek( 33, f, SEEK_CUR, &fs, &err );
-    fat32_lseek( 10052, f, SEEK_CUR, &fs, &err );
-    fat32_lseek( 32768, f, SEEK_CUR, &fs, &err );
-    fat32_lseek( 16256, f, SEEK_CUR, &fs, &err );
-    BPOINT();
-    fat32_lseek( 16512, f, SEEK_SET, &fs, &err );
+    fat_file_t *f = fat32_fopen( &fs, "/lowbytes/rocks.jpg", O_OPEN | O_RDONLY );
+    fat32_lseek( 1024, f, SEEK_CUR, &fs, &err );
     size_t buf_off = 0;
+    BPOINT();
     uint32_t start = get_current_counter();
     while ( 1 ) {
         buf_off = fat32_fread( buf, sizeof( buf ), f, &fs, &err );
@@ -52,10 +47,6 @@ int main(void) {
     } 
     uint32_t end = get_current_counter();
     uint32_t time = ( end - start );
-#if defined( DEBUG_INFO_ENABLE )
-    printf_( "Time to read the file: %d\r\n", time );
-#endif
-
     fat32_fclose( f ); 
     BPOINT();
 }

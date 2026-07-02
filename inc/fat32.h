@@ -218,6 +218,7 @@ typedef struct {
     fat_sdir_entry_t    dir_entry;
     char                path[MAX_FILE_PATH_LENGTH];
     uint8_t             file_buf[512];
+    uint16_t            _file_buf_idx;
     size_t              sect_off;
     size_t              char_off;
     size_t              curr_clus;
@@ -232,6 +233,7 @@ typedef enum {
     FAT_ERR_BAD_FILE_SIZE       = 8,
     FAT_ERR_NULL_POINTER        = 16,
     FAT_ERR_IO                  = 32,
+    FAT_ERR_UNDEFINED           = 64,
 } fat_err_e;
 
 typedef enum {
