@@ -31,7 +31,14 @@ int main(void) {
 
     uint8_t buf[4096];
     fat_err_e err = FAT_ERR_NONE;
-    fat_file_t *f = fat32_fopen( &fs, "/lowbytes/rocks.jpg", O_OPEN | O_RDONLY );
+    fat_file_t *f = fat32_fopen( &fs, "/lowbytes/moon.jpg", O_OPEN | O_RDONLY );
+    fat32_lseek( 3, f, SEEK_CUR, &fs, &err );
+    fat32_lseek( 33, f, SEEK_CUR, &fs, &err );
+    fat32_lseek( 10052, f, SEEK_CUR, &fs, &err );
+    fat32_lseek( 32768, f, SEEK_CUR, &fs, &err );
+    fat32_lseek( 16256, f, SEEK_CUR, &fs, &err );
+    BPOINT();
+    fat32_lseek( 16512, f, SEEK_SET, &fs, &err );
     size_t buf_off = 0;
     uint32_t start = get_current_counter();
     while ( 1 ) {

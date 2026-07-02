@@ -120,7 +120,7 @@ static inline int fat_entry_sec_offset( fat_fs_t *fs, uint32_t entry ) {
     }
 }
 
-// TODO: Implement hash map for fat_entries
+// TODO: Implement cash stored value in fs_t, current approach read 512 bytes for a 4-byte value
 static inline uint32_t fat_entry( fat_fs_t *fs, uint32_t entry ) {
     int sector = fat_entry_sector_num( fs, entry );
     int offset = fat_entry_sec_offset( fs, entry );
@@ -281,6 +281,77 @@ static int fat_lookup(  fat_fs_t *fs, const char *path, size_t len, fat_sdir_ent
     return 0;
 }
 
+static size_t fat_clus_lookup( fat_fs_t *fs, fat_file_t *file, size_t off, fat_err_e *err ) {
+    size_t tmp = file->curr_clus;
+    for ( size_t clus_idx = 0; clus_idx < off; clus_idx++ ) {
+        tmp = fat_entry( fs, tmp );            
+        if ( tmp == FAT_EOC ) {
+            *err |= FAT_ERR_IO; return 0;
+        } 
+    }
+    return tmp;
+}
+
+size_t fat32_fwrite( const void* buffer, size_t size, fat_file_t *file, fat_fs_t *fs, fat_err_e *err ) {
+    if ( file->mode & O_RDONLY ) {
+        *err |= FAT_ERR_MODE_CONFILICT;
+        return 0;
+    }
+    
+    return 0;
+}
+
+size_t fat32_lseek( size_t offset, fat_file_t *file, fat_whence_e whence, fat_fs_t *fs, fat_err_e *err ) {
+
+    // TODO: Optimize algebraic formulas for calculation of offsets, there is some redundancy in current approach
+    size_t clus_idx = 0;
+    size_t sect_off = 0, char_off = 0, clus_off = 0;
+    if ( whence == SEEK_CUR ) {
+
+        sect_off = file->sect_off + ( ( file->char_off + offset ) / fs->bytes_per_sector ); 
+        char_off = ( file->char_off + offset ) % fs->bytes_per_sector;
+
+        if ( sect_off >= fs->sectors_per_cluster ) {
+            clus_off = sect_off / fs->sectors_per_cluster;
+            sect_off = sect_off - ( clus_off * fs->sectors_per_cluster );
+
+            size_t tmp_clus = fat_clus_lookup( fs, file, clus_off, err );
+            if ( tmp_clus > 0 ) file->curr_clus = tmp_clus;
+            else return 0;
+        }
+
+    } else if ( whence == SEEK_SET ) {
+
+        sect_off = offset / fs->bytes_per_sector; 
+        char_off = offset % fs->bytes_per_sector;
+        size_t clus_bup = file->curr_clus;
+        file->curr_clus = CLUS_LO_PLUS_HI ( file->dir_entry.dir_fst_clus_lo, file->dir_entry.dir_fst_clus_hi );
+
+        if ( sect_off >= fs->sectors_per_cluster ) {
+            clus_off = sect_off / fs->sectors_per_cluster;
+            sect_off = sect_off - ( clus_off * fs->sectors_per_cluster );
+
+            size_t clus_bup = file->curr_clus;   
+            size_t tmp_clus = fat_clus_lookup( fs, file, clus_off, err );   
+
+            if ( tmp_clus  > 0 ) {
+                file->curr_clus = tmp_clus;
+            } else {
+                file->curr_clus = clus_bup;
+                return 0;
+            }
+        }
+
+    } else {
+        *err |= FAT_ERR_IO;
+        return 0;
+    }
+    file->sect_off = sect_off;
+    file->char_off = char_off;
+    return offset;
+}
+
+
 // TODO: Implement new version using multiple read function, mesure perfomance
 size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_fs_t *fs, fat_err_e *err ) {
     if ( file->mode & ( O_RDONLY & ( O_APPEND | O_TRUNC | O_WRONLY | O_RDWR ) ) ) {
@@ -292,7 +363,6 @@ size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_fs_t *fs, f
     size_t sect_null = fat_cluster_offset( fs, file->curr_clus );     // First sector of the current cluster
 
     while ( buf_idx < size && buf_idx < file->dir_entry.dir_file_size ) {
-        file->sect_off++;
 
         size_t max_in_cluster = fs->sectors_per_cluster - file->sect_off;
         size_t max_in_buf = ( size - buf_idx ) / fs->bytes_per_sector;
@@ -309,6 +379,7 @@ size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_fs_t *fs, f
         } else {
             fat_get_sector( fs, sect_null + file->sect_off, fs->bytes_per_sector, &buffer[buf_idx] );
             buf_idx += fs->bytes_per_sector;
+            file->sect_off++;
         }
 
         if ( file->sect_off >= fs->sectors_per_cluster ) {
@@ -331,6 +402,7 @@ void fat32_fclose( fat_file_t *file ) {
 }
 
 
+
 fat_file_t *fat32_fopen(  fat_fs_t *fs, const char *path, uint8_t mode ) {
     // TODO: Define syslock exectuion mode for parallel MCUs
     // TODO: Add err input parameter
@@ -346,7 +418,7 @@ fat_file_t *fat32_fopen(  fat_fs_t *fs, const char *path, uint8_t mode ) {
     size_t clus_off = fat_cluster_offset( fs, CLUS_LO_PLUS_HI( sdir.dir_fst_clus_lo, sdir.dir_fst_clus_hi ) );
     fat_get_sector( fs, clus_off, sizeof( fd_table[fd].file_buf ), fd_table[fd].file_buf );
     fd_table[fd].curr_clus = CLUS_LO_PLUS_HI( sdir.dir_fst_clus_lo, sdir.dir_fst_clus_hi );
-    fd_table[fd].sect_off = 0;
+    fd_table[fd].sect_off = fd_table[fd].char_off = 0;   
     fd_table[fd].mode = mode; 
 
     return &fd_table[fd];
@@ -359,6 +431,7 @@ int fat32_mount( uint32_t start_addr, fat_fs_t* fs ) {
 
     fat_get_sector( fs, start_addr, sizeof( fs->sector_buffer ), fs->sector_buffer );
     _fat_memcpy( &boot_sector, fs->sector_buffer, sizeof( fs->sector_buffer ) );
+
 
     if ( *( uint16_t * )boot_sector.bpb_bytes_per_sec != MMC_BLOCK_SIZE ) {
 #if defined( DEBUG_INFO_ENABLE )
