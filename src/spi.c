@@ -22,6 +22,8 @@ void spi_dma_setup( void ) {
 void spi_dma_disable( void ) {
     nvic_disable_irq( NVIC_DMA1_CHANNEL2_IRQ );
     nvic_disable_irq( NVIC_DMA1_CHANNEL3_IRQ );
+    spi_disable_tx_dma( SPI1 );
+    spi_disable_rx_dma( SPI1 );
 }
 
 int spi_dma_xmit( uint8_t const *tx_buf, size_t tx_len, uint8_t *rx_buf, size_t rx_len ) {
@@ -45,7 +47,6 @@ int spi_dma_xmit( uint8_t const *tx_buf, size_t tx_len, uint8_t *rx_buf, size_t 
         dma_enable_transfer_complete_interrupt( DMA1, DMA_CHANNEL2 );
         dma_enable_channel( DMA1, DMA_CHANNEL2 ); 
         spi_enable_rx_dma( SPI1 );
-
     }
 
     if ( tx_len > 0 ) {

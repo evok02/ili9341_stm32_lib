@@ -88,6 +88,8 @@ static uint8_t dummy_tx[MMC_BLOCK_SIZE] = {
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 
 };
 
+static uint8_t dummy_rx[MMC_BLOCK_SIZE] = { 0 };
+
 typedef enum {
     ERR_TOKEN_NONE,
     ERR_TOKEN_ERROR,
@@ -136,40 +138,50 @@ uint8_t mmc_write_command( uint8_t cmd, uint32_t arg ) {
 }
 
 
-int mcc_write_single_block( uint32_t block, const uint8_t *data, size_t length ) {
-    uint8_t dummy_rx[MMC_BLOCK_SIZE];
+int mmc_write_single_block( uint32_t block, const uint8_t *data, size_t length ) {
+    if ( length > 2048 ) return -1;
 
     _mmc_wait(  );
     mmc_write_command( MMC_WRITE_SINGLE_BLOCK, block ); 
+    uint8_t r = 0xFF;
 
     // Keep the clock running.
-    ( void )spi_read_write( 0xFF );
-    ( void )spi_read_write( 0xFF );
+    _mmc_wait();
 
-    spi_send_byte_blocking( MMC_TOKEN_SINGLE_WRITE );
-    _mmc_write_buffer_dma(  data, length, dummy_rx  );
+    while ( ( r = spi_read_write( 0xFF ) ) != MMC_TOKEN_SINGLE_WRITE ) __asm__( "nop" );
+    _mmc_write_buffer_dma( data, length, dummy_rx );
+
+    // Skipping CRC.
+    ( void )spi_read_write( 0xFF ); 
+    ( void )spi_read_write( 0xFF ); 
 
     return spi_read_write( 0xFF );
+
+    _SET_MMC_NSS( LOW );
 }
 
-int mmc_write_multiple_blocks( uint32_t block, size_t count, uint8_t *data ) {
+size_t mmc_write_multiple_blocks( uint32_t block, size_t count, const uint8_t *data ) {
     size_t counter = 0;
+    uint8_t r = 0;
 
-    _mmc_wait(  );
+    _SET_MMC_NSS( LOW );
+    _mmc_wait( );
     mmc_write_command( MMC_SET_BLOCK_COUNT, count );
     mmc_write_command( MMC_WRITE_MULTIPLE_BLOCK, block );
 
-    // Keep the clock running.
-    ( void )spi_read_write( 0xFF );
-    ( void )spi_read_write( 0xFF );
-
     while ( counter < count ) {
-        _mmc_write_buffer( data, MMC_BLOCK_SIZE );
-        if ( spi_read_write( 0xFF ) != MMC_TOKEN_MULTIPLE_WRITE ) return counter;
-        _mmc_wait(  );
-        data += MMC_BLOCK_SIZE;
+        _mmc_wait( );
+        while ( ( r = spi_read_write( 0xFF ) ) != MMC_TOKEN_MULTIPLE_WRITE ) __asm__( "nop" );
+        _mmc_write_buffer_dma( data, MMC_BLOCK_SIZE, dummy_rx );
+        ( void )spi_read_write( 0xFF );
+        ( void )spi_read_write( 0xFF );
         counter++;
+        data += MMC_BLOCK_SIZE;
     }
+
+    mmc_write_command( MMC_STOP_TRANSMISSION, 0 );
+    _mmc_wait(  );
+    _SET_MMC_NSS( HIGH );
 
     return counter;
 }
@@ -184,9 +196,9 @@ int mmc_read_single_block( uint32_t block, size_t length, uint8_t *data ) {
     uint8_t r = 0xFF;
     _mmc_wait(  );
     // TODO: set timeout, to prevent possible halting
-    while ( ( r = spi_read_write( 0xFF ) ) != MMC_TOKEN_SINGLE_READ ) __asm__( "nop" );
-    _mmc_read_buffer_dma( data, length, dummy_tx );
-    // _mmc_read_buffer( data , length );
+    while ( ( r = spi_read_write( 0xFF ) ) != MMC_TOKEN_SINGLE_READ )
+        __asm__( "nop" );
+    _mmc_read_buffer_dma( data , length, dummy_tx );
 
     // Skipping CRC.
     ( void )spi_read_write( 0xFF ); 
@@ -207,7 +219,7 @@ size_t mmc_read_multiple_blocks( const uint32_t block, size_t count, uint8_t *da
 
     while ( counter != count ) {
         _mmc_wait(  );
-        while ( ( r = spi_read_write( 0xFF ) ) != MMC_TOKEN_MULTIPLE_READ )
+        while ( ( r = spi_read_write( 0xFF ) ) != MMC_TOKEN_MULTIPLE_READ ) 
             __asm__( "nop" );
         _mmc_read_buffer_dma( data, MMC_BLOCK_SIZE, dummy_tx );
         ( void )spi_read_write( 0xFF );
@@ -219,6 +231,7 @@ size_t mmc_read_multiple_blocks( const uint32_t block, size_t count, uint8_t *da
     mmc_write_command( MMC_STOP_TRANSMISSION, 0 );
     _mmc_wait(  );
     _SET_MMC_NSS( HIGH );
+    // spi_dma_disable();
 
     return counter;
 }

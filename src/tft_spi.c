@@ -16,8 +16,6 @@
 static uint32_t square_side_length;
 
 int main(void) {
-    static fat_fs_t fs;
-
     system_rcc_setup();
     system_gpio_setup();
     system_systick_setup();
@@ -26,18 +24,25 @@ int main(void) {
     uart_setup();
     mmc_init();
     
-    fat32_mount(64, &fs);
+    fat32_mount( 64 );
 
 
     uint8_t buf[4096];
     fat_err_e err = FAT_ERR_NONE;
-    fat_file_t *f = fat32_fopen( &fs, "/lowbytes/rocks.jpg", O_OPEN | O_RDONLY );
-    fat32_lseek( 1024, f, SEEK_CUR, &fs, &err );
+    fat_file_t *f = fat32_fopen( "/lowbytes/notes.txt", O_OPEN | O_WRONLY );
+    if ( f == NULL ) {
+#if defined ( DEBUG_INFO_ENABLE )
+        printf( "wrong path or couldn't find place to allocate the file" );
+        return -1;
+#endif
+    }
+    fat32_lseek( f->dir_entry.dir_file_size, f, SEEK_SET, &err );
     size_t buf_off = 0;
     BPOINT();
     uint32_t start = get_current_counter();
     while ( 1 ) {
-        buf_off = fat32_fread( buf, sizeof( buf ), f, &fs, &err );
+        char *str = " hello world! \n\n";
+        buf_off = fat32_fwrite( str, 16, f, &err );
         if ( err & FAT_ERR_EOF ) {
             printf_( "Image was read successfully! \r\n" );
             break;

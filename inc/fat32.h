@@ -125,15 +125,17 @@ typedef struct {
     uint32_t        data_sectors;               // Number of data sectors 
     uint32_t        cluster_count;              // Total number of allocatiion units
     fat_sub_type_e  sub_type;                   // Sub type of FAT file system
-    uint32_t        last_fat_read;           // Index of the last fat entry that was read
+    uint32_t        last_fat_read;              // Index of the last fat entry that was read
     uint32_t        last_sector_read;           // Index of the last fat entry that was read
-    uint32_t        root_clus_num;
+    uint32_t        last_sector_wrote;          // Index of the last fat entry that was read
+    uint32_t        root_clus_num;              
+    uint32_t        fs_info_sector;             // Sector number of fs_info
     uint8_t         sector_buffer[512];         // Sector buffer
 
     uint16_t        bytes_per_sector;           // Amount of bytes per sector
     uint8_t         sectors_per_cluster;        // Amount of sectors per allocation unit
 
-} __attribute__( ( __aligned__( 4 ) ) ) fat_fs_t;
+} __attribute__( ( __aligned__( 8 ) ) ) fat_fs_t;
 
 #if defined( MMC_FS_TYPE_FAT32 )
 typedef struct {
@@ -216,6 +218,7 @@ typedef enum {
 
 typedef struct {
     fat_sdir_entry_t    dir_entry;
+    size_t              dir_sector;
     char                path[MAX_FILE_PATH_LENGTH];
     uint8_t             file_buf[512];
     uint16_t            _file_buf_idx;
@@ -234,6 +237,7 @@ typedef enum {
     FAT_ERR_NULL_POINTER        = 16,
     FAT_ERR_IO                  = 32,
     FAT_ERR_UNDEFINED           = 64,
+    FAT_ERR_FILE_NAME           = 128,
 } fat_err_e;
 
 typedef enum {
@@ -241,11 +245,11 @@ typedef enum {
     SEEK_SET,
 } fat_whence_e;
 
-int fat32_mount( uint32_t start_addr, fat_fs_t *fs );
-fat_file_t *fat32_fopen( fat_fs_t *fs, const char *path, uint8_t mode );
-void fat32_fclose( fat_file_t *file );
-size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_fs_t *fs, fat_err_e *err );
-size_t fat32_fwrite( const void* buffer, size_t size, fat_file_t *file, fat_fs_t *fs, fat_err_e *err );
-size_t fat32_lseek( size_t offset, fat_file_t *file, fat_whence_e whence, fat_fs_t *fs, fat_err_e *err );
+int fat32_mount( uint32_t start_addr );
+fat_file_t *fat32_fopen( const char *path, uint8_t mode );
+int fat32_fclose( fat_file_t *file );
+size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_err_e *err );
+size_t fat32_fwrite( const void* buffer, size_t size, fat_file_t *file, fat_err_e *err );
+size_t fat32_lseek( size_t offset, fat_file_t *file, fat_whence_e whence, fat_err_e *err );
 
 #endif

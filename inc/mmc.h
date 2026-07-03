@@ -62,9 +62,9 @@ int mmc_init(void);
 uint8_t mmc_write_command(uint8_t cmd, uint32_t arg);
 
 int mmc_read_single_block(uint32_t block, size_t length, uint8_t* data);
-size_t mmc_read_multiple_blocks(const uint32_t block, size_t count, uint8_t* data);
+size_t mmc_read_multiple_blocks(uint32_t block, size_t count, uint8_t* data);
 
 int mmc_write_single_block(uint32_t block, const uint8_t* data, size_t length);
-int mmc_write_multiple_blocks(const uint32_t block, size_t count, uint8_t* data);
+size_t mmc_write_multiple_blocks(uint32_t block, size_t count, const uint8_t* data);
 
 #endif
