@@ -251,5 +251,5 @@ int fat32_fclose( fat_file_t *file );
 size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_err_e *err );
 size_t fat32_fwrite( const void* buffer, size_t size, fat_file_t *file, fat_err_e *err );
 size_t fat32_lseek( size_t offset, fat_file_t *file, fat_whence_e whence, fat_err_e *err );
-
+int fat32_fsync( fat_file_t *file );
 #endif

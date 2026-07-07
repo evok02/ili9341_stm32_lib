@@ -135,7 +135,7 @@ inline void spi_wait( void ) {
 }
 
 uint8_t spi_read_write( uint8_t data ) {
-    // spi_wait(  );
+    spi_wait(  );
     spi_write( SPI1, data );
     return spi_read( SPI1 );
 }
