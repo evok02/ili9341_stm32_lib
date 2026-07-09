@@ -37,7 +37,9 @@ static int _fat_memcpy( void *restrict dest, void const *restrict src, size_t le
 #endif
         return -1;
     } 
-    for ( size_t i = 0; i < len / 4; i++ ) ( ( uint32_t * )dest )[i] = ( ( uint32_t * )src )[i]; 
+    size_t i;
+    for ( i = 0; i < len / 4; i++ ) ( ( uint32_t * )dest )[i] = ( ( uint32_t * )src )[i]; 
+    for ( i = len & ~3; i < len; i++ ) ( ( uint8_t * )dest )[i] = ( ( uint8_t * )src )[i];
     return 0;
 }
 
@@ -517,8 +519,6 @@ size_t fat32_fwrite( const void *buffer, size_t size, fat_file_t *file, fat_err_
 
     if ( size > fs.sectors_per_cluster * fs.bytes_per_sector ) return 0;
 
-    static size_t wrote_bytes = 0;
-
     if ( file->curr_clus == 0 ) {
         size_t entry = fat_allocate_cluster( 0 ); 
         if ( entry < 0 ) {
@@ -552,7 +552,7 @@ size_t fat32_fwrite( const void *buffer, size_t size, fat_file_t *file, fat_err_
         fat_get_sector( sect_null + file->sect_off, fs.bytes_per_sector, file->file_buf );
         size_t l_len = fs.bytes_per_sector - file->char_off; 
         _fat_memcpy( &file->file_buf[file->char_off], buffer, l_len );
-        buf_idx += l_len; wrote_bytes += l_len;
+        buf_idx += l_len; // wrote_bytes += l_len;
         file->char_off = 0;
         file->sect_off++;
     }
@@ -561,27 +561,24 @@ size_t fat32_fwrite( const void *buffer, size_t size, fat_file_t *file, fat_err_
 
         size_t max_in_cluster = fs.sectors_per_cluster - file->sect_off;
         size_t max_in_buf = ( size - buf_idx ) / fs.bytes_per_sector;
-        // size_t max_in_file = ( file->dir_entry.dir_file_size - wrote_bytes ) / fs.bytes_per_sector;
 
         size_t batch = max_in_cluster;
         if ( max_in_buf  < batch ) batch = max_in_buf;
-        // if ( max_in_file < batch ) batch = max_in_file;
 
         if ( batch > 1 ) {
             fat_put_multiple_sectors( sect_null + file->sect_off, batch, &buffer[buf_idx] );
             size_t l_len = batch * fs.bytes_per_sector;
-            buf_idx += l_len; wrote_bytes += l_len;
+            buf_idx += l_len; 
             file->sect_off += batch;
         } else if ( batch == 1 ) {
             fat_put_sector( sect_null + file->sect_off, fs.bytes_per_sector, &buffer[buf_idx] );
             buf_idx += fs.bytes_per_sector;
-            wrote_bytes += fs.bytes_per_sector;
             file->sect_off++;
         } else if ( batch == 0 ) {
             size_t l_len = size - buf_idx;
             fat_put_sector( sect_null + file->sect_off, fs.bytes_per_sector, &buffer[buf_idx] );
             _fat_memcpy( file->file_buf, &buffer[buf_idx], l_len );  // sect_off is not increasing until it is fully in buffer
-            buf_idx += l_len; file->char_off += l_len; wrote_bytes += l_len;
+            buf_idx += l_len; file->char_off += l_len; 
         } else {
             *err |= FAT_ERR_UNDEFINED;
             break;
@@ -1016,14 +1013,14 @@ int fat32_mount( uint32_t start_addr ) {
         fat_get_sector( fs.fs_info_sector, sizeof( fat_fsinfo_t ), (uint8_t *)&fs_info);
         if ( *( uint32_t * )fs_info.fsi_lead_sig != FAT_FSI_LEAD_SIGN ) {
 #if defined( DEBUG_INFO_ENABLE ) 
-        printf("fat32.c:%d |  fsi_lead_sig is not equal to %x: actual number: %x\r\n",
+        printf_("fat32.c:%d |  fsi_lead_sig is not equal to %x: actual number: %x\r\n",
                __LINE__, FAT_FSI_LEAD_SIGN, fs_info.fsi_lead_sig );
 #endif
             return -1;
         }
         if ( *( uint32_t * )fs_info.fsi_struc_sig != FAT_FSI_STRUC_SIG ) {
 #if defined( DEBUG_INFO_ENABLE ) 
-        printf("fat32.c:%d |  fsi_struc_sig is not equal to %x: actual number: %x\r\n",
+        printf_("fat32.c:%d |  fsi_struc_sig is not equal to %x: actual number: %x\r\n",
                __LINE__, FAT_FSI_STRUC_SIG, fs_info.fsi_struc_sig );
 #endif
             return -1;
@@ -1031,15 +1028,15 @@ int fat32_mount( uint32_t start_addr ) {
 
         if ( *( uint32_t * )fs_info.fsi_trail_sig != FAT_FSI_TRAIL_SIG ) {
 #if defined( DEBUG_INFO_ENABLE ) 
-        printf("fat32.c:%d |  fsi_struc_sig is not equal to %x: actual number: %x\r\n",
+        printf_("fat32.c:%d |  fsi_struc_sig is not equal to %x: actual number: %x\r\n",
                __LINE__, FAT_FSI_TRAIL_SIG, fs_info.fsi_struc_sig );
 #endif
             return -1;
         }
 #if defined( DEBUG_INFO_ENABLE ) 
-        printf( "fat32.c:%d | amount of free clusters: %x, next free cluster: %x\r\n",
+        printf_( "fat32.c:%d | amount of free clusters: %x, next free cluster: %x\r\n",
                __LINE__, *( uint32_t * )fs_info.fsi_free_count, *( uint32_t *)fs_info.fsi_next_free );
-        printf( "fat32.c:%d | amount of free clusters: %x, total amount of clusters: %x\r\n",
+        printf_( "fat32.c:%d | amount of free clusters: %x, total amount of clusters: %x\r\n",
                __LINE__, *( uint32_t * )fs_info.fsi_free_count, *( uint32_t * )boot_sector.bpb_fatsz32 );
         if ( fs_info.fsi_next_free > boot_sector.bpb_fatsz32 )
             printf_( "Next free cluster number is bigger than the maxim number of clusters\r\n" );
