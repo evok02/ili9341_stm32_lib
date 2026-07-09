@@ -5,4 +5,4 @@ arm-none-eabi-gdb -ex 'target remote :3333' \
     -ex 'load' \
     -ex 'break main' \
     -ex 'c' \
-    ./tft_spi.elf
+    ./main.elf

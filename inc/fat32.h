@@ -225,6 +225,8 @@ typedef struct {
     size_t              sect_off;
     size_t              char_off;
     size_t              curr_clus;
+    size_t              last_clus;
+    size_t              off;
     fat_fflag_t         mode;
 } fat_file_t;
 
@@ -252,4 +254,5 @@ size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_err_e *err 
 size_t fat32_fwrite( const void* buffer, size_t size, fat_file_t *file, fat_err_e *err );
 size_t fat32_lseek( size_t offset, fat_file_t *file, fat_whence_e whence, fat_err_e *err );
 int fat32_fsync( fat_file_t *file );
+uint32_t fat32_get_file_size( fat_file_t *file );
 #endif

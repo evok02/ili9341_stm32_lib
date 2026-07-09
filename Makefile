@@ -15,7 +15,7 @@ STFLASH        = st-flash
 DEBUG          = -ggdb3
 CSTD           = -std=c11
 
-BINARY         = tft_spi
+BINARY         = main
 
 SRC_DIR        = src
 INC_DIR        = inc

@@ -15,6 +15,8 @@
 #define CLUS_LO_PLUS_HI( CLUS_LO, CLUS_HI ) \
         ( ( ( CLUS_HI ) << 16 ) | ( CLUS_LO ) )
 
+#define BYTES_PER_CLUSTER ( ( fs.bytes_per_sector ) * ( fs.sectors_per_cluster ) )
+
 static fat_file_t fd_table[FD_TABLE_LENGTH];
 
 static fat32_fs_info_t fs_info;
@@ -55,10 +57,6 @@ static inline uint8_t _fat_strcount( const char *in, const char c, size_t len ) 
 }
 
 static inline int _fat_strfind( const char *in, const char c, size_t len ) {
-    //for ( int idx = 0; idx < len; idx++ ) {
-        //if ( in[idx] == 'c' ) return idx;
-    //}
-    //return -1;
     size_t counter = 0;
     while ( *in++ != c ) {
         counter++;
@@ -318,22 +316,26 @@ static uint32_t fat_allocate_cluster( uint32_t hint ) {
         if ( *( uint32_t * )fs_info.fsi_next_free > fs.cluster_count )
             entry = fs.root_clus_num; 
         else entry = *( uint32_t * )fs_info.fsi_next_free + 1;
-    } else entry = hint;
+    } else entry = hint + 1;
 
     while ( 1 ) {
         if ( fat_entry( entry ) == 0 ) {
             int sect_off = fat_entry_sec_offset( entry );
             uint32_t eoc = FAT_EOC;
-            _fat_memcpy( fs.sector_buffer + sect_off, &eoc, 4 );
-            *( uint32_t * )fs_info.fsi_next_free = entry;
-            BPOINT();
+            _fat_memcpy( &fs.sector_buffer[sect_off], &eoc, 4 );
+            _fat_memcpy( fs_info.fsi_next_free, &entry, 4 );
 #if defined( DEBUG_INFO_ENABLE )
-            printf_( "fat32.d:%d | FS Info next_free field changed to: %d\r\n", __LINE__, fs_info.fsi_next_free );
+            printf_( "fat32.d:%d | FS Info next_free field changed to: %d\r\n", __LINE__, *( uint32_t * )fs_info.fsi_next_free );
 #endif
             break;
         } else entry++; 
     }
+    fat_put_sector( fs.last_sector_read, fs.bytes_per_sector, fs.sector_buffer );
     return entry;
+}
+
+uint32_t fat32_get_file_size( fat_file_t *file ) {
+    return file->dir_entry.dir_file_size;
 }
 
 size_t fat32_fwrite( const void *buffer, size_t size, fat_file_t *file, fat_err_e *err ) {
@@ -341,6 +343,8 @@ size_t fat32_fwrite( const void *buffer, size_t size, fat_file_t *file, fat_err_
         *err |= FAT_ERR_MODE_CONFILICT;
         return 0;
     }
+
+    if ( size > fs.sectors_per_cluster * fs.bytes_per_sector ) return 0;
 
     static size_t wrote_bytes = 0;
 
@@ -355,6 +359,22 @@ size_t fat32_fwrite( const void *buffer, size_t size, fat_file_t *file, fat_err_
             return 0;
         }
     }
+
+    uint32_t mod_cluster = file->dir_entry.dir_file_size % BYTES_PER_CLUSTER;
+    if ( mod_cluster == 0 || mod_cluster + size > BYTES_PER_CLUSTER ) {
+        uint32_t clus_fat_entry = fat_entry( file->curr_clus );
+        if (  clus_fat_entry == FAT_EOC ) {
+            uint32_t clus = fat_allocate_cluster( file->curr_clus );
+            if ( clus == 0 ) { *err |= FAT_ERR_UNDEFINED; return 0; }
+            int sec = fat_entry_sector_num( file->curr_clus );
+            if ( sec < 0 ) { *err |= FAT_ERR_UNDEFINED; return 0; }
+            fat_get_sector( sec, fs.bytes_per_sector, fs.sector_buffer );
+            _fat_memcpy( &fs.sector_buffer[fat_entry_sec_offset( file->curr_clus )],
+                        &clus, sizeof( clus ) );
+            fat_put_sector( sec, fs.bytes_per_sector, fs.sector_buffer );
+        }
+    } 
+
 
     size_t buf_idx = 0, sect_null = fat_cluster_offset( file->curr_clus );     // First sector of the current cluster
 
@@ -398,19 +418,13 @@ size_t fat32_fwrite( const void *buffer, size_t size, fat_file_t *file, fat_err_
         }
 
         if ( file->sect_off >= fs.sectors_per_cluster ) {
-            if ( ( file->curr_clus = fat_entry( file->curr_clus ) ) == FAT_EOC ) {
-                *err |= FAT_ERR_EOF;
-                wrote_bytes = 0;
-                break;
-            } 
             sect_null = fat_cluster_offset( file->curr_clus ); file->sect_off = 0;
         }
     }
 
-    if ( wrote_bytes >= file->dir_entry.dir_file_size ) {
-        *err |= FAT_ERR_EOF;
-        wrote_bytes = 0;
-    } 
+    if ( file->off + size > file->dir_entry.dir_file_size ) {
+        file->dir_entry.dir_file_size = file->off + size;
+    }
 
     if ( fat32_fsync( file ) < 0 ) {
 #if defined ( DEBUG_INFO_ENABLE )
@@ -425,11 +439,14 @@ size_t fat32_fwrite( const void *buffer, size_t size, fat_file_t *file, fat_err_
 size_t fat32_lseek( size_t offset, fat_file_t *file, fat_whence_e whence, fat_err_e *err ) {
 
     // TODO: Optimize algebraic formulas for calculation of offsets, there is some redundancy in current approach
+
+    BPOINT();
     size_t clus_idx = 0;
     size_t sect_off = 0, char_off = 0, clus_off = 0;
     if ( whence == SEEK_CUR ) {
         sect_off = file->sect_off + ( ( file->char_off + offset ) / fs.bytes_per_sector ); 
         char_off = ( file->char_off + offset ) % fs.bytes_per_sector;
+        file->off += offset;
 
         if ( sect_off >= fs.sectors_per_cluster ) {
             clus_off = sect_off / fs.sectors_per_cluster;
@@ -440,6 +457,7 @@ size_t fat32_lseek( size_t offset, fat_file_t *file, fat_whence_e whence, fat_er
             else return 0;
         }
     } else if ( whence == SEEK_SET ) {
+        file->off = offset;
         sect_off = offset / fs.bytes_per_sector; 
         char_off = offset % fs.bytes_per_sector;
         size_t clus_bup = file->curr_clus;
@@ -514,12 +532,12 @@ size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_err_e *err 
             fat_get_sector( sect_null + file->sect_off, fs.bytes_per_sector, &buffer[buf_idx] );
             buf_idx += fs.bytes_per_sector;
             read_bytes += fs.bytes_per_sector;
-            file->sect_off++;
+            file->sect_off++; 
         } else if ( batch == 0 ) {
             size_t l_len = size - buf_idx;
             fat_get_sector( sect_null + file->sect_off, fs.bytes_per_sector, file->file_buf );
             _fat_memcpy( &buffer[buf_idx], file->file_buf, l_len );  // sect_off is not increasing until it is fully in buffer
-            buf_idx += l_len; file->char_off += l_len; read_bytes += l_len;
+            buf_idx += l_len; file->char_off += l_len; read_bytes += l_len; 
         } else {
             *err |= FAT_ERR_UNDEFINED;
             break;
@@ -534,7 +552,6 @@ size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_err_e *err 
             sect_null = fat_cluster_offset( file->curr_clus ); file->sect_off = 0;
         }
     }
-
     if ( read_bytes >= file->dir_entry.dir_file_size ) {
         *err |= FAT_ERR_EOF;
         read_bytes = 0;
@@ -545,6 +562,7 @@ size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_err_e *err 
 }
 
 int fat32_fsync( fat_file_t *file ) {
+    BPOINT();
     fat_get_sector( file->dir_sector, fs.bytes_per_sector, fs.sector_buffer );
     fat_sdir_entry_t *sector = ( fat_sdir_entry_t * )fs.sector_buffer;
     size_t dir_idx = 0, dir_ent_per_sector = fs.bytes_per_sector / sizeof( fat_sdir_entry_t );
@@ -584,11 +602,16 @@ fat_file_t *fat32_fopen( const char *path, uint8_t mode ) {
     _fat_memcpy( fd_table[fd].path, ( void * )path, _fat_strlen( path ) );
     _fat_memcpy( &fd_table[fd], ( void * )&sdir, sizeof( fat_sdir_entry_t ) );
     size_t clus_off = fat_cluster_offset( CLUS_LO_PLUS_HI( sdir.dir_fst_clus_lo, sdir.dir_fst_clus_hi ) );
-    fat_get_sector( clus_off, sizeof( fd_table[fd].file_buf ), fd_table[fd].file_buf );
+    if ( clus_off != 0 ) fat_get_sector( clus_off, sizeof( fd_table[fd].file_buf ), fd_table[fd].file_buf );
     fd_table[fd].curr_clus = CLUS_LO_PLUS_HI( sdir.dir_fst_clus_lo, sdir.dir_fst_clus_hi );
     fd_table[fd].sect_off = fd_table[fd].char_off = 0;   
     fd_table[fd].mode = mode; 
     fd_table[fd].dir_sector = sect_num;
+    uint32_t clus_amount = fd_table[fd].dir_entry.dir_file_size / ( fs.sectors_per_cluster * fs.bytes_per_sector );
+    fat_err_e err = FAT_ERR_NONE;
+    BPOINT();
+    fd_table[fd].last_clus = fat_clus_lookup( &fd_table[fd], clus_amount, &err );
+    if ( err != FAT_ERR_NONE ) return NULL;
 
     return &fd_table[fd];
 }
@@ -762,7 +785,7 @@ int fat32_mount( uint32_t start_addr ) {
     fs.bytes_per_sector = *( uint16_t * )boot_sector.bpb_bytes_per_sec;
     fs.sectors_per_cluster = boot_sector.bpb_sec_per_clus;
     fs.root_clus_num = *( uint32_t * )boot_sector.bpb_root_clus;
-    fs.fs_info_sector = start_addr + *( uint16_t *)boot_sector.bpb_fs_info;
+    fs.fs_info_sector = start_addr + *( uint16_t * )boot_sector.bpb_fs_info;
 
    
     if ( fs.sub_type == FAT_SUB_TYPE_FAT32 ) {
@@ -790,10 +813,10 @@ int fat32_mount( uint32_t start_addr ) {
             return -1;
         }
 #if defined( DEBUG_INFO_ENABLE ) 
-        printf( "fat32.c:%d | amount of free clusters: %d, next free cluster: %d\r\n",
-               __LINE__, fs_info.fsi_free_count, fs_info.fsi_next_free );
-        printf( "fat32.c:%d | amount of free clusters: %d, total amount of clusters: %d\r\n",
-               __LINE__, fs_info.fsi_free_count, boot_sector.bpb_fatsz32 );
+        printf( "fat32.c:%d | amount of free clusters: %x, next free cluster: %x\r\n",
+               __LINE__, *( uint32_t * )fs_info.fsi_free_count, *( uint32_t *)fs_info.fsi_next_free );
+        printf( "fat32.c:%d | amount of free clusters: %x, total amount of clusters: %x\r\n",
+               __LINE__, *( uint32_t * )fs_info.fsi_free_count, *( uint32_t * )boot_sector.bpb_fatsz32 );
         if ( fs_info.fsi_next_free > boot_sector.bpb_fatsz32 )
             printf_( "Next free cluster number is bigger than the maxim number of clusters\r\n" );
 #endif

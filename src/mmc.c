@@ -7,8 +7,8 @@
 #define MMC_TOKEN_SINGLE_READ       ( 0xFEU )
 #define MMC_TOKEN_MULTIPLE_READ     ( 0xFEU )
 #define MMC_TOKEN_SINGLE_WRITE      ( 0xFEU )
-#define MMC_TOKEN_MULTIPLE_WRITE    ( 0xFBU )
-#define MMC_TOKEN_STOP_TRAN         ( 0xFCU )
+#define MMC_TOKEN_MULTIPLE_WRITE    ( 0xFCU )
+#define MMC_TOKEN_STOP_TRAN         ( 0xFDU )
 
 /* MCC responses to the common commands:
  * https://elm-chan.org/docs/mmc/mmc_e.html */
@@ -186,7 +186,7 @@ size_t mmc_write_multiple_blocks( uint32_t block, size_t count, const uint8_t *d
 
     _SET_MMC_NSS( LOW );
     mmc_write_command( MMC_SET_BLOCK_COUNT, count );
-    mmc_write_command( MMC_WRITE_MULTIPLE_BLOCK, block );
+    r = mmc_write_command( MMC_WRITE_MULTIPLE_BLOCK, block );
 
     while ( counter < count ) {
         _mmc_wait( );
@@ -200,8 +200,10 @@ size_t mmc_write_multiple_blocks( uint32_t block, size_t count, const uint8_t *d
         data += MMC_BLOCK_SIZE;
     }
 
-    mmc_write_command( MMC_STOP_TRANSMISSION, 0 );
     _mmc_wait(  );
+    spi_read_write( MMC_TOKEN_STOP_TRAN );
+    spi_read_write( 0xFF );
+    _mmc_wait( );
     _SET_MMC_NSS( HIGH );
 
     return counter;
@@ -228,6 +230,8 @@ int mmc_read_single_block( uint32_t block, size_t length, uint8_t *data ) {
     // Skipping CRC.
     ( void )spi_read_write( 0xFF ); 
     ( void )spi_read_write( 0xFF ); 
+
+    _mmc_wait();
     _SET_MMC_NSS( HIGH );
     return 0;
 }
@@ -257,7 +261,6 @@ size_t mmc_read_multiple_blocks( const uint32_t block, size_t count, uint8_t *da
         data += MMC_BLOCK_SIZE;
     }
 
-    mmc_write_command( MMC_STOP_TRANSMISSION, 0 );
     _mmc_wait(  );
     _SET_MMC_NSS( HIGH );
 
