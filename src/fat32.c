@@ -23,6 +23,13 @@ static fat32_fs_info_t fs_info;
 
 static fat_fs_t fs;
 
+/**
+ * @brief  Copy memory contents from source to destination.
+ * @param  dest  Pointer to the destination buffer.
+ * @param  src   Pointer to the source buffer.
+ * @param  len   Number of bytes to copy.
+ * @return 0 on success, -1 if dest or src is NULL.
+ */
 static int _fat_memcpy( void *restrict dest, void const *restrict src, size_t len ) {
     if ( dest == 0 || src == 0 ) {
 #if defined( DEBUG_INFO_ENABLE )
@@ -30,16 +37,28 @@ static int _fat_memcpy( void *restrict dest, void const *restrict src, size_t le
 #endif
         return -1;
     } 
-    for ( size_t i = 0; i < len; i++ ) ( ( uint8_t * )dest )[i] = ( ( uint8_t * )src )[i]; 
+    for ( size_t i = 0; i < len / 4; i++ ) ( ( uint32_t * )dest )[i] = ( ( uint32_t * )src )[i]; 
     return 0;
 }
 
+/**
+ * @brief  Calculate the length of a null-terminated string.
+ * @param  str  Pointer to the input string.
+ * @return Number of characters before the terminating null byte.
+ */
 static inline uint32_t _fat_strlen( const char* str ) {
     uint32_t len = 0;
     while ( *str++ != '\0' ) len++;
     return len;
 }
 
+/**
+ * @brief  Compare two strings up to a given length.
+ * @param  str1  First string to compare.
+ * @param  str2  Second string to compare.
+ * @param  len   Maximum number of characters to compare.
+ * @return 0 if strings match, -1 if a mismatch is found.
+ */
 static inline int _fat_strcmp( const char *restrict str1, const char *restrict str2, size_t len ) {
     for ( size_t s_idx = 0; s_idx < len; s_idx++ ) {
         if ( str1[s_idx] != str2[s_idx] ) return -1;
@@ -48,6 +67,13 @@ static inline int _fat_strcmp( const char *restrict str1, const char *restrict s
 }
 
 
+/**
+ * @brief  Count occurrences of a character in a bounded string.
+ * @param  in   Pointer to the input string.
+ * @param  c    Character to count.
+ * @param  len  Maximum number of characters to search.
+ * @return Number of occurrences of @p c.
+ */
 static inline uint8_t _fat_strcount( const char *in, const char c, size_t len ) {
     size_t counter = 0;
     for ( size_t idx = 0; idx < len; idx++ ) {
@@ -56,6 +82,13 @@ static inline uint8_t _fat_strcount( const char *in, const char c, size_t len ) 
     return counter;
 }
 
+/**
+ * @brief  Find the first occurrence of a character in a bounded string.
+ * @param  in   Pointer to the input string.
+ * @param  c    Character to locate.
+ * @param  len  Maximum number of characters to search.
+ * @return Index of the first occurrence, or len if not found.
+ */
 static inline int _fat_strfind( const char *in, const char c, size_t len ) {
     size_t counter = 0;
     while ( *in++ != c ) {
@@ -66,6 +99,13 @@ static inline int _fat_strfind( const char *in, const char c, size_t len ) {
 }
 
 
+/**
+ * @brief  Read a single sector from the MMC into a buffer.
+ * @param  sector  Sector index to read.
+ * @param  length  Number of bytes to read.
+ * @param  data    Destination buffer.
+ * @note   Updates fs.last_sector_read on completion.
+ */
 static inline void fat_get_sector( uint32_t sector, size_t length, uint8_t *data ) {
     int r = mmc_read_single_block( sector, length, data );
 #if defined( DEBUG_INFO_ENABLE )
@@ -76,26 +116,59 @@ static inline void fat_get_sector( uint32_t sector, size_t length, uint8_t *data
     fs.last_sector_read = sector;
 }
 
+/**
+ * @brief  Read multiple consecutive sectors from the MMC.
+ * @param  sector  Starting sector index.
+ * @param  length  Number of bytes to read.
+ * @param  data    Destination buffer.
+ * @note   Updates fs.last_sector_read to the last sector actually read.
+ */
 static inline void fat_get_multiple_sectors( uint32_t sector, size_t length, uint8_t *data ) {
     int off = mmc_read_multiple_blocks( sector, length, data );
     fs.last_sector_read = sector + off;
 }
 
+/**
+ * @brief  Write a single sector to the MMC.
+ * @param  sector  Sector index to write.
+ * @param  length  Number of bytes to write.
+ * @param  data    Source buffer containing data to write.
+ * @note   Updates fs.last_sector_wrote on completion.
+ */
 static inline void fat_put_sector( uint32_t sector, size_t length, const uint8_t *data ) {
     ( void )mmc_write_single_block( sector, data, length );
     fs.last_sector_wrote = sector;
 }
 
+/**
+ * @brief  Write multiple consecutive sectors to the MMC.
+ * @param  sector  Starting sector index.
+ * @param  length  Number of bytes to write.
+ * @param  data    Source buffer.
+ * @note   Updates fs.last_sector_wrote to the last sector actually written.
+ */
 static inline void fat_put_multiple_sectors( uint32_t sector, size_t length, const uint8_t *data ) {
     int off = mmc_write_multiple_blocks( sector, length, data );
     fs.last_sector_wrote = sector + off;
 }
 
+/**
+ * @brief  Compute the first sector number of a given cluster.
+ * @param  cluster  Cluster index (2-based).
+ * @return First sector number of the cluster, or -1 if cluster is out of range.
+ * @note   Cluster 2 maps to fs.data_start_sector.
+ */
 static inline int fat_cluster_offset( uint32_t cluster ) {
     if ( cluster > ( fs.data_sectors / fs.sectors_per_cluster ) ) return -1;
     return fs.data_start_sector + ( cluster - 2 ) * fs.sectors_per_cluster; 
 }
 
+/**
+ * @brief  Compute the sector number containing a given FAT entry.
+ * @param  entry  FAT entry index.
+ * @return Sector number containing the entry, or -1 on error (invalid entry or sub type).
+ * @note   Handles FAT16 and FAT32 entry sizes; FAT12 is not implemented.
+ */
 static inline int fat_entry_sector_num( uint32_t entry ) {
     switch ( fs.sub_type ) {
         // TODO: Reserach implementation details.
@@ -118,6 +191,12 @@ static inline int fat_entry_sector_num( uint32_t entry ) {
     }
 }
 
+/**
+ * @brief  Compute the byte offset of a FAT entry within its sector.
+ * @param  entry  FAT entry index.
+ * @return Byte offset within the sector, or -1 on error.
+ * @note   Handles FAT16 and FAT32 entry sizes; FAT12 is not implemented.
+ */
 static inline int fat_entry_sec_offset( uint32_t entry ) {
     switch ( fs.sub_type ) {
         //case FAT_SUB_TYPE_FAT12: { 
@@ -137,7 +216,12 @@ static inline int fat_entry_sec_offset( uint32_t entry ) {
     }
 }
 
-// TODO: Implement cash stored value in fs_t, current approach read 512 bytes for a 4-byte value
+/**
+ * @brief  Read the value of a FAT entry from the File Allocation Table.
+ * @param  entry  FAT entry index (cluster number).
+ * @return The FAT entry value masked with FAT_EOC (0x0FFFFFFF).
+ * @note   Currently reads the entire sector (512 bytes) to extract a 4-byte value.
+ */
 static inline uint32_t fat_entry( uint32_t entry ) {
     int sector = fat_entry_sector_num( entry );
     int offset = fat_entry_sec_offset( entry );
@@ -148,6 +232,10 @@ static inline uint32_t fat_entry( uint32_t entry ) {
 
 
 
+/**
+ * @brief  Find a free file descriptor slot in the global fd_table.
+ * @return Index of the first unused slot (mode has no O_OPEN flag), or -1 if all slots are in use.
+ */
 static int fat_find_fd( void ) {
     for ( int table_index = 0; table_index < FD_TABLE_LENGTH; table_index++ ) {
         if ( !(  fd_table[table_index].mode & O_OPEN  ) ) return table_index;
@@ -155,6 +243,12 @@ static int fat_find_fd( void ) {
     return -1;
 }
 
+/**
+ * @brief  Convert a character to its DOS-compatible representation.
+ * @param  in  Input character.
+ * @return DOS-compatible character (uppercase, '\\' for '/'), 0 for null,
+ *         or 1 for invalid/unrepresentable characters.
+ */
 static char fat_to_doschar( char in ) {
     if ( in == 0 )  {
         return 0;
@@ -172,8 +266,16 @@ static char fat_to_doschar( char in ) {
     } else return in;
 }
 
-// TODO: Optimize complexity, as this version really hard to debug and has an average perfomance, approach should be reconsidered
-// NOTE: Check existing version of this function 
+/**
+ * @brief  Convert a filename to an 8.3 DOS short filename.
+ * @param  dosname  Output buffer (must be at least 11 bytes).
+ * @param  name     Input filename.
+ * @param  name_len Length of the input filename.
+ * @return 0 on success, -1 if the name is invalid (too long, starts with '.',
+ *         or contains invalid characters).
+ * @note   Names without an extension are left-justified and space-padded to 11 chars.
+ *         Names with an extension use up to 8 chars for the base and 3 for the ext.
+ */
 static int fat_name_to_dosname( char *restrict dosname, const char *restrict name, size_t name_len ) {
     uint8_t nm_ptr = 0, dnm_ptr = 0;
     char c;
@@ -218,6 +320,14 @@ static int fat_name_to_dosname( char *restrict dosname, const char *restrict nam
     return 0;
 }
 
+/**
+ * @brief  Convert a UNIX-style path to a DOS-style path.
+ * @param  dospath  Output buffer for the DOS path.
+ * @param  path     Input UNIX path (e.g. "/dir/file.txt").
+ * @return 0 on success.
+ * @note   Each path component is converted to an 11-byte DOS name prefixed by '\\'.
+ *         Long file names (LFN) are not supported.
+ */
 static int fat_path_to_dospath( char *restrict dospath, const char *restrict path ) {
     // TODO: Possible create another function or expand this one to support LFN format
     size_t i_ptr = 0, j_ptr = 0, d_ptr = 0;
@@ -233,6 +343,14 @@ static int fat_path_to_dospath( char *restrict dospath, const char *restrict pat
     return 0;
 }
 
+/**
+ * @brief  Search a sector buffer for a directory entry matching a DOS name.
+ * @param  sector    Sector buffer (MMC_BLOCK_SIZE bytes).
+ * @param  dir_entry Output: populated with the matching directory entry.
+ * @param  dos_name  11-byte DOS name to match.
+ * @return 0 if a matching entry is found, -1 otherwise.
+ * @note   Stops early if an entry with dir_name[0] == 0 (end of directory) is encountered.
+ */
 static int fat_traverse_dir_entries( uint8_t sector[MMC_BLOCK_SIZE], fat_sdir_entry_t *dir_entry, char *dos_name ) {
     // TODO: Do conditional compilational blocks for other sub systems
     for ( uint16_t i = 0; i < MMC_BLOCK_SIZE; i += 32 ) {
@@ -244,6 +362,15 @@ static int fat_traverse_dir_entries( uint8_t sector[MMC_BLOCK_SIZE], fat_sdir_en
     return -1;
 }
 
+/**
+ * @brief  Search a cluster chain for a file matching the given DOS name.
+ * @param  dir_name  11-byte DOS name to find.
+ * @param  dir_entry Output: populated with the matching directory entry.
+ * @param  clus_num  Starting cluster number to search.
+ * @return The sector number where the entry was found, or 0 if not found.
+ * @note   Walks the entire cluster chain via fat_entry() until FAT_EOC.
+ *         Breaks early if more than 10 consecutive unused entries are found.
+ */
 static size_t fat_file_is_present( char *dir_name, fat_sdir_entry_t *dir_entry, uint32_t clus_num ) {
     uint32_t sector_offset = 0;
     do {
@@ -261,6 +388,12 @@ static size_t fat_file_is_present( char *dir_name, fat_sdir_entry_t *dir_entry, 
     return 0;
 }
 
+/**
+ * @brief  Calculate the required buffer length for a DOS path.
+ * @param  path  Input UNIX path.
+ * @param  len   Length of the input path.
+ * @return Required buffer length (12 * levels + 1), or -1 if the path has no components.
+ */
 static inline int fat_calculate_dospath_length( const char *path, size_t len ) {
     uint8_t levels = _fat_strcount( path, '/', len );
     if ( levels == 0 ) return -1;
@@ -268,9 +401,18 @@ static inline int fat_calculate_dospath_length( const char *path, size_t len ) {
 }
 
 
+/**
+ * @brief  Resolve a full UNIX path to its directory entry.
+ * @param  path      Full path to resolve (e.g. "/dir1/dir2/file.txt").
+ * @param  len       Length of the path string.
+ * @param  curr_dir  Output: directory entry of the resolved file or directory.
+ * @return Sector number where the entry was found, or 0 if the path does not exist.
+ * @note   Walks the directory tree from the root cluster, resolving each path component.
+ *         Returns failure if any intermediate component is not a directory.
+ */
 static size_t fat_lookup( const char *path, size_t len, fat_sdir_entry_t *curr_dir ) {
     //TODO: Do conditional execution is len > 12 
-    if ( _fat_strlen( path )  > MAX_FILE_PATH_LENGTH ) return 0;
+    if ( _fat_strlen( path ) > MAX_FILE_PATH_LENGTH ) return 0;
     uint8_t levels = _fat_strcount( path, '/', len );
     uint32_t curr_clus_num = fs.root_clus_num;
 
@@ -282,12 +424,10 @@ static size_t fat_lookup( const char *path, size_t len, fat_sdir_entry_t *curr_d
     fat_path_to_dospath( dospath, path );
 
     for ( int dpath_ptr = 1; dpath_ptr < dospath_len; dpath_ptr += 12 ) {       // offset = dospath_len + 1 ('\')
-        if ( ( sect = fat_file_is_present( &dospath[dpath_ptr], curr_dir, curr_clus_num ) ) != 0 ) {
-            if ( curr_dir->dir_attr & DIR_ATTR_DIRECTORY ) {
-                if ( dpath_ptr + 12 == dospath_len ) break;
-                else curr_clus_num = CLUS_LO_PLUS_HI( curr_dir->dir_fst_clus_lo, curr_dir->dir_fst_clus_hi );
-            } else break;
-        } else return 0;
+        if ( ( sect = fat_file_is_present( &dospath[dpath_ptr], curr_dir, curr_clus_num ) ) == 0 ) return 0;
+        if ( ! ( curr_dir->dir_attr & DIR_ATTR_DIRECTORY ) ) break; 
+        if ( dpath_ptr + 12 == dospath_len ) break;
+        curr_clus_num = CLUS_LO_PLUS_HI( curr_dir->dir_fst_clus_lo, curr_dir->dir_fst_clus_hi );
     }
 
 #if defined(DEBUG_INFO_ENABLE)
@@ -298,6 +438,13 @@ static size_t fat_lookup( const char *path, size_t len, fat_sdir_entry_t *curr_d
     return sect;
 }
 
+/**
+ * @brief  Walk the cluster chain forward by a given number of steps.
+ * @param  file  File descriptor whose cluster chain to walk.
+ * @param  off   Number of clusters to advance.
+ * @param  err   Pointer to error flags (FAT_ERR_IO set on premature FAT_EOC).
+ * @return The cluster number after advancing @p off steps, or 0 on error.
+ */
 static size_t fat_clus_lookup( fat_file_t *file, size_t off, fat_err_e *err ) {
     size_t tmp = file->curr_clus;
     for ( size_t clus_idx = 0; clus_idx < off; clus_idx++ ) {
@@ -309,6 +456,13 @@ static size_t fat_clus_lookup( fat_file_t *file, size_t off, fat_err_e *err ) {
     return tmp;
 }
 
+/**
+ * @brief  Allocate a free cluster by marking it with FAT_EOC in the FAT.
+ * @param  hint  Preferred starting cluster number for the search, or 0 to use FSInfo hint.
+ * @return The allocated cluster number, or 0 if allocation fails.
+ * @note   Searches from the hint (or FSInfo next_free) upward for a zero-valued entry.
+ *         Updates the FSInfo next_free field and writes the modified sector back.
+ */
 static uint32_t fat_allocate_cluster( uint32_t hint ) {
     uint32_t entry;
     if ( hint > fs.cluster_count ) return 0;
@@ -334,10 +488,27 @@ static uint32_t fat_allocate_cluster( uint32_t hint ) {
     return entry;
 }
 
+/**
+ * @brief  Get the size of an open file.
+ * @param  file  Pointer to the open file descriptor.
+ * @return File size in bytes.
+ */
 uint32_t fat32_get_file_size( fat_file_t *file ) {
     return file->dir_entry.dir_file_size;
 }
 
+/**
+ * @brief  Write data to an open file.
+ * @param  buffer  Pointer to the data to write.
+ * @param  size    Number of bytes to write.
+ * @param  file    Pointer to the open file descriptor.
+ * @param  err     Pointer to error flags (set on failure).
+ * @return Number of bytes written on success, 0 on failure, -1 on fsync failure.
+ * @note   Rejects writes on read-only files. Automatically allocates clusters
+ *         (first cluster and when current cluster is full). Handles partial
+ *         sectors via char_off buffering. Calls fat32_fsync() to flush directory
+ *         entry changes to disk.
+ */
 size_t fat32_fwrite( const void *buffer, size_t size, fat_file_t *file, fat_err_e *err ) {
     if ( file->mode & O_RDONLY ) {
         *err |= FAT_ERR_MODE_CONFILICT;
@@ -350,20 +521,19 @@ size_t fat32_fwrite( const void *buffer, size_t size, fat_file_t *file, fat_err_
 
     if ( file->curr_clus == 0 ) {
         size_t entry = fat_allocate_cluster( 0 ); 
-        if ( entry > 0 ) {
-            file->curr_clus = entry;
-            file->dir_entry.dir_fst_clus_lo = entry & 0xFFFF;
-            file->dir_entry.dir_fst_clus_hi = ( entry >> 16 ) & 0xFFFF;
-        } else {
+        if ( entry < 0 ) {
             *err |= FAT_ERR_IO;
             return 0;
         }
+        file->curr_clus = entry;
+        file->dir_entry.dir_fst_clus_lo = entry & 0xFFFF;
+        file->dir_entry.dir_fst_clus_hi = ( entry >> 16 ) & 0xFFFF;
     }
 
     uint32_t mod_cluster = file->dir_entry.dir_file_size % BYTES_PER_CLUSTER;
     if ( mod_cluster == 0 || mod_cluster + size > BYTES_PER_CLUSTER ) {
         uint32_t clus_fat_entry = fat_entry( file->curr_clus );
-        if (  clus_fat_entry == FAT_EOC ) {
+        if ( clus_fat_entry == FAT_EOC ) {
             uint32_t clus = fat_allocate_cluster( file->curr_clus );
             if ( clus == 0 ) { *err |= FAT_ERR_UNDEFINED; return 0; }
             int sec = fat_entry_sector_num( file->curr_clus );
@@ -418,7 +588,8 @@ size_t fat32_fwrite( const void *buffer, size_t size, fat_file_t *file, fat_err_
         }
 
         if ( file->sect_off >= fs.sectors_per_cluster ) {
-            sect_null = fat_cluster_offset( file->curr_clus ); file->sect_off = 0;
+            sect_null = fat_cluster_offset( file->curr_clus );
+            file->sect_off = 0;
         }
     }
 
@@ -436,50 +607,63 @@ size_t fat32_fwrite( const void *buffer, size_t size, fat_file_t *file, fat_err_
     return buf_idx;
 }
 
+/**
+ * @brief  Reposition the read/write offset of an open file.
+ * @param  offset  Number of bytes to seek.
+ * @param  file    Pointer to the open file descriptor.
+ * @param  whence  Origin: SEEK_CUR (from current position) or SEEK_SET (from start).
+ * @param  err     Pointer to error flags (set on failure).
+ * @return The resulting absolute offset on success, 0 on failure.
+ * @note   Walks the cluster chain via fat_clus_lookup() when crossing cluster boundaries.
+ *         Recalculates sector offset and character offset within the sector.
+ */
 size_t fat32_lseek( size_t offset, fat_file_t *file, fat_whence_e whence, fat_err_e *err ) {
 
     // TODO: Optimize algebraic formulas for calculation of offsets, there is some redundancy in current approach
 
-    BPOINT();
     size_t clus_idx = 0;
     size_t sect_off = 0, char_off = 0, clus_off = 0;
-    if ( whence == SEEK_CUR ) {
-        sect_off = file->sect_off + ( ( file->char_off + offset ) / fs.bytes_per_sector ); 
-        char_off = ( file->char_off + offset ) % fs.bytes_per_sector;
-        file->off += offset;
+    switch ( whence ) {
+        case SEEK_CUR: {
 
-        if ( sect_off >= fs.sectors_per_cluster ) {
-            clus_off = sect_off / fs.sectors_per_cluster;
-            sect_off = sect_off - ( clus_off * fs.sectors_per_cluster );
+            sect_off = file->sect_off + ( ( file->char_off + offset ) / fs.bytes_per_sector ); 
+            char_off = ( file->char_off + offset ) % fs.bytes_per_sector;
+            file->off += offset;
 
-            size_t tmp_clus = fat_clus_lookup( file, clus_off, err );
-            if ( tmp_clus > 0 ) file->curr_clus = tmp_clus;
-            else return 0;
-        }
-    } else if ( whence == SEEK_SET ) {
-        file->off = offset;
-        sect_off = offset / fs.bytes_per_sector; 
-        char_off = offset % fs.bytes_per_sector;
-        size_t clus_bup = file->curr_clus;
-        file->curr_clus = CLUS_LO_PLUS_HI ( file->dir_entry.dir_fst_clus_lo, file->dir_entry.dir_fst_clus_hi );
+            if ( sect_off >= fs.sectors_per_cluster ) {
+                clus_off = sect_off / fs.sectors_per_cluster;
+                sect_off = sect_off - ( clus_off * fs.sectors_per_cluster );
 
-        if ( sect_off >= fs.sectors_per_cluster ) {
-            clus_off = sect_off / fs.sectors_per_cluster;
-            sect_off = sect_off - ( clus_off * fs.sectors_per_cluster );
-
-            size_t clus_bup = file->curr_clus;   
-            size_t tmp_clus = fat_clus_lookup( file, clus_off, err );   
-
-            if ( tmp_clus  > 0 ) {
-                file->curr_clus = tmp_clus;
-            } else {
-                file->curr_clus = clus_bup;
-                return 0;
+                size_t tmp_clus = fat_clus_lookup( file, clus_off, err );
+                if ( tmp_clus > 0 ) file->curr_clus = tmp_clus;
+                else return 0;
             }
-        }
-    } else {
-        *err |= FAT_ERR_IO;
-        return 0;
+
+        } break;
+        case SEEK_SET: {
+
+            file->off = offset;
+            sect_off = offset / fs.bytes_per_sector; 
+            char_off = offset % fs.bytes_per_sector;
+            size_t clus_bup = file->curr_clus;
+            file->curr_clus = CLUS_LO_PLUS_HI ( file->dir_entry.dir_fst_clus_lo, file->dir_entry.dir_fst_clus_hi );
+
+            if ( sect_off >= fs.sectors_per_cluster ) {
+                clus_off = sect_off / fs.sectors_per_cluster;
+                sect_off = sect_off - ( clus_off * fs.sectors_per_cluster );
+
+                size_t clus_bup = file->curr_clus;   
+                size_t tmp_clus = fat_clus_lookup( file, clus_off, err );   
+
+                if ( tmp_clus < 0 ) { file->curr_clus = clus_bup; return 0; }     
+                file->curr_clus = tmp_clus;
+            }
+
+        } break;
+        default: {
+            *err |= FAT_ERR_IO;
+            return 0;
+        } break;
     }
     file->sect_off = sect_off;
     file->char_off = char_off;
@@ -487,7 +671,17 @@ size_t fat32_lseek( size_t offset, fat_file_t *file, fat_whence_e whence, fat_er
 }
 
 
-// TODO: Implement new version using multiple read function, mesure perfomance
+/**
+ * @brief  Read data from an open file.
+ * @param  buffer  Destination buffer.
+ * @param  size    Number of bytes to read (must be a multiple of bytes_per_sector).
+ * @param  file    Pointer to the open file descriptor.
+ * @param  err     Pointer to error flags (set on failure).
+ * @return Number of bytes read on success, 0 on error or EOF.
+ * @note   Only works with O_RDONLY or O_RDWR modes. Reads are batched:
+ *         full clusters use multi-block reads, partial clusters use single-block reads.
+ *         Sets FAT_ERR_EOF when all file data has been consumed.
+ */
 size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_err_e *err ) {
 
     if ( !( file->mode & O_RDONLY ) && !( file->mode & O_RDWR ) ) {
@@ -561,6 +755,13 @@ size_t fat32_fread( void* buffer, size_t size, fat_file_t *file, fat_err_e *err 
     return buf_idx;
 }
 
+/**
+ * @brief  Synchronize the directory entry of an open file to disk.
+ * @param  file  Pointer to the open file descriptor.
+ * @return 0 on success, -1 if the entry could not be found in its directory sector.
+ * @note   Reads the directory sector, locates the matching entry by name,
+ *         copies the in-memory directory entry over it, and writes the sector back.
+ */
 int fat32_fsync( fat_file_t *file ) {
     BPOINT();
     fat_get_sector( file->dir_sector, fs.bytes_per_sector, fs.sector_buffer );
@@ -574,11 +775,17 @@ int fat32_fsync( fat_file_t *file ) {
     if ( dir_idx == dir_ent_per_sector ) return -1;
    
     _fat_memcpy( &sector[dir_idx], &file->dir_entry, sizeof( fat_sdir_entry_t ) );
-    BPOINT();
     fat_put_sector( file->dir_sector, fs.bytes_per_sector, ( uint8_t *)sector );
     return 0;
 }
 
+/**
+ * @brief  Close an open file descriptor.
+ * @param  file  Pointer to the file descriptor to close.
+ * @return Always 0.
+ * @note   Clears the file mode (setting it to O_NONE) and flushes the FSInfo
+ *         sector back to disk.
+ */
 int fat32_fclose( fat_file_t *file ) {
     file->mode = O_NONE;
     fat_put_sector( fs.fs_info_sector, fs.bytes_per_sector, ( uint8_t *)&fs_info );
@@ -588,6 +795,15 @@ int fat32_fclose( fat_file_t *file ) {
 
 
 
+/**
+ * @brief  Open a file by path.
+ * @param  path  Absolute path to the file (must start with '/').
+ * @param  mode  File access mode flags (e.g. O_RDONLY, O_WRONLY, O_RDWR, O_OPEN).
+ * @return Pointer to the file descriptor on success, NULL on failure.
+ * @note   Finds a free slot in the global fd_table, resolves the path via
+ *         fat_lookup(), reads the first cluster into the file buffer, and
+ *         locates the last cluster for append operations.
+ */
 fat_file_t *fat32_fopen( const char *path, uint8_t mode ) {
     // TODO: Define mutex exectuion mode for parallel MCUs
     // TODO: Add err input parameter
@@ -616,8 +832,16 @@ fat_file_t *fat32_fopen( const char *path, uint8_t mode ) {
     return &fd_table[fd];
 }
 
-// start addr - address of boot sector on your drive ( in sectors )
-// fs - pointer to file system object
+/**
+ * @brief  Mount a FAT file system at the given sector offset.
+ * @param  start_addr  Sector address of the boot sector.
+ * @return 0 on success, -1 on validation failure, 1 on non-critical warning.
+ * @note   Reads and validates the BPB (bytes per sector, sectors per cluster,
+ *         reserved sectors, root entry count, media descriptor, signatures).
+ *         Computes FAT geometry (FAT start, data region, root cluster, cluster count)
+ *         and, for FAT32, validates the FSInfo sector signatures.
+ *         Detects FAT12/FAT16/FAT32 based on cluster count.
+ */
 int fat32_mount( uint32_t start_addr ) {
     fat_boot_sector_t boot_sector = { 0 };
 
@@ -825,6 +1049,14 @@ int fat32_mount( uint32_t start_addr ) {
     return 0;
 }
 
+/**
+ * @brief  Convert a byte buffer from little-endian to big-endian in place.
+ * @param  buf  Destination buffer (may be the same as src).
+ * @param  src  Source buffer.
+ * @param  len  Length of the data in bytes.
+ * @return 0 on success, -1 if len is 0.
+ * @note   Marked __unused__; not currently called in the codebase.
+ */
 static int __attribute__ (( __unused__ )) _fat_to_big_endian( uint8_t *buf, uint8_t *src, size_t len ) {
     // Check if len has a valid value
     if ( len == 0 ) {

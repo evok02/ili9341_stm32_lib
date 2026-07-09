@@ -46,7 +46,6 @@ int main(void) {
         return -1;
 #endif
     }
-
     
     size_t buf_off = 0;
     uint32_t start = get_current_counter();
@@ -67,9 +66,24 @@ int main(void) {
             break;
         } 
     }
-    // _fat_memcpy( buffer, " yo, its egg.txt btw \n\n", sizeof( " yo, its egg.txt btw \n\n" ) );
+
     uint32_t end = get_current_counter();
     uint32_t time = ( end - start );
-    BPOINT();
+    uint32_t start2 = get_current_counter();
+    i = 0;
+    while ( i++ < 4 ) {
+        fat32_lseek( i * sizeof(buffer), f_notes, SEEK_SET, &err );
+        buf_off = fat32_fread( buffer, sizeof( buffer ), f_notes, &err );
+        if ( err & FAT_ERR_EOF ) {
+            printf_( "Document was read successfully! \r\n" );
+            break;
+        } else if ( err & FAT_ERR_BUF_OVERFLOW ) {
+            printf_( "Buffer overflow occured, change the size of the buffer! \r\n " );
+            break;
+        } 
+    }
+    uint32_t end2 = get_current_counter();
+    uint32_t time2 = ( end2 - start2 );
+
     fat32_fclose( f_notes ); 
 }
